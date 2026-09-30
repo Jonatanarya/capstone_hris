@@ -1,0 +1,13 @@
+{
+  "fileKey": "2IZSe3cKSXkQvXloeJxMGB",
+  "url": "https://www.figma.com/design/2IZSe3cKSXkQvXloeJxMGB",
+  "scope": "frontend UI",
+  "screens": { "dashboard": "6:2", "employees": "14:145", "leave": "14:259" },
+  "components": {
+    "nav": "12:108",
+    "metric": "12:116",
+    "badge": "12:120",
+    "leaveRow": "12:122"
+  },
+  "status": "editable screens created; button contrast refinement blocked by Figma Starter MCP quota"
+}
