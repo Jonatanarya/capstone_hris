@@ -75,3 +75,7 @@ Dialog cetak PDF memakai fitur cetak browser; hasil cetak lintas browser belum t
 ## CI/CD
 
 **Frontend CI** berjalan pada push `main` dan pull request. **Deploy Vercel** hanya menerima commit main dari repository ini yang sudah lolos CI, dan hanya aktif setelah konfigurasi. Tidak ada token di repository. Petunjuk aktivasi, rollback dan batasan ada di [panduan deployment](docs/DEPLOYMENT.md). CD yang dilewati karena belum dikonfigurasi bukan deployment sukses.
+
+## Handoff untuk teman backend
+
+Mulai dari [paket handoff Supabase](docs/backend-handoff/README.md): kontrak API/DTO, rancangan tabel, matriks RLS, pembagian kerja M0–M6, serta checklist tes dan staging. Statusnya usulan v1 untuk disepakati bersama, **bukan backend yang sudah diimplementasikan**. Target integrasi pertama adalah login nyata, profil dan direktori karyawan sesuai peran. Frontend tetap demo sampai integrasi tersebut dikerjakan.
