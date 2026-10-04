@@ -12,6 +12,7 @@
 | Cuti memakai hari kalender, tidak cek bentrok/tahun/pending | Hari kerja, kuota per tahun, pending mereservasi kuota, cek konflik |
 | Penolakan tanpa alasan/metadata | Alasan wajib, pemutus/tanggal keputusan; cegah approval sendiri |
 | Payroll diproses sebagai satu boolean | Status tiap periode, snapshot gaji pokok dan kunci komponen terbit |
+| Karyawan dapat mengekspor payroll draft walau slip belum terbit | Tombol dan handler ekspor payroll karyawan mensyaratkan periode terbit |
 | Hasil kinerja terbawa antarperiode; manager menilai sendiri | Record per periode, keadaan belum dinilai, larangan self-review |
 | Master hanya tambah; akun hanya daftar | Ubah nama/referensi; peran/status akun simulasi |
 | CSV tidak menetralisasi formula dan mengabaikan filter karyawan | CSV escaping/formula guard; ekspor mengikuti filter |

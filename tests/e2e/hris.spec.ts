@@ -78,6 +78,9 @@ test("payroll terbit per periode dan tidak tampil sebelum diterbitkan", async ({
   await expect(
     page.getByRole("button", { name: "Slip gaji", exact: true }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Ekspor payroll", exact: true }),
+  ).toBeDisabled();
   await role(page, "Admin HR");
   await navigate(page, "Payroll");
   await page

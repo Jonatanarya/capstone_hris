@@ -480,6 +480,10 @@ export default function HrisApp({ today }: { today: string }) {
     }
   };
   const download = (kind: string) => {
+    if (kind === "payroll" && role === "Karyawan" && !processed) {
+      toast.error("Payroll periode ini belum diterbitkan");
+      return;
+    }
     let rows: unknown[][] = [];
     if (kind === "payroll")
       rows = [
@@ -1674,7 +1678,11 @@ export default function HrisApp({ today }: { today: string }) {
                   values={periods}
                   label="Periode payroll"
                 />
-                <Button variant="outline" onClick={() => download("payroll")}>
+                <Button
+                  variant="outline"
+                  disabled={role === "Karyawan" && !processed}
+                  onClick={() => download("payroll")}
+                >
                   <Download size={16} />
                   Ekspor payroll
                 </Button>
