@@ -82,7 +82,9 @@ dan `private.operation_requests` tidak diekspos sebagai Data API.
 ## 6. Hasil verifikasi (dijalankan nyata)
 
 - `npx tsc --noEmit` — lulus.
-- `npm test` — 6 unit test lulus.
+- `npm test` — 32 unit test lulus (4 berkas: `hris`, `api-mode`, `api-adapters`, `api-client`).
+- `npm audit --omit=dev --audit-level=high` — **0 vulnerabilities**; `sharp` 0.35.5
+  (GHSA-wq5f-xc86-pv6w) dan `source-map-js` 1.2.2 (GHSA-68fv-2mgg-jv7q) di-pin via `overrides`.
 - `npm run build` — 31 route handler + proxy terkompilasi.
 - `npm run db:status` — 10 karyawan, 5 departemen, 8 jabatan, 7 akun; RLS aktif
   pada 12 tabel; 13 fungsi RPC.
