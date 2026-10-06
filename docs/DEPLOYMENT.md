@@ -45,6 +45,24 @@ Sumber data nyata memakai project Supabase `btzqutfgxsiyerfrzrhu`
 (12 tabel, RLS aktif, 13 RPC) dengan akun uji seed (sandi `Demo-Password-123!`).
 Akun uji hanya untuk demo akademik; ganti sandi sebelum dipakai publik.
 
+### Temuan E2E alur tulis (2026-10-06, lanjutan)
+
+Uji tulis end-to-end ke produksi (login per peran, cuti → approve manager,
+penilaian, presensi, payroll draft → item → publish) menemukan dua bug runtime
+yang lalu diperbaiki dan diverifikasi ulang (**27/27 lulus**):
+
+- `attendance_check_in` mengembalikan **500** karena `case when ... end` bertipe
+  `text` sementara kolom `attendances.status` bertipe enum
+  `public.attendance_status` (PG 42804). Diperbaiki dengan cast eksplisit dan
+  migrasi `0006_fix_attendance_check_in.sql`; kini **201** (atau **409**
+  `ALREADY_CHECKED_IN` bila sudah absen hari itu).
+- Revisi penilaian (`PUT /employees/{id}/performance-reviews/{period}`) selalu
+  **409** `VERSION_CONFLICT` karena UI tidak mengirim `expectedVersion`; kini
+  versi tersimpan dari GET dan dikirim saat revisi.
+
+Deploy produksi setelah perbaikan: CI `37508628014` dan Deploy `37508859558`
+sukses (`d2e4ecd`).
+
 ## Pengamanan GitHub
 
 CI memakai `contents: read`; CD tidak menerima artifact atau source dari fork/PR. Kredensial hanya diberikan ke job deploy untuk commit main pada repository sendiri yang lolos CI. Workflow checkout SHA yang diuji, bukan selalu HEAD yang bisa berubah.

@@ -111,6 +111,25 @@ supaya mode demo tetap bisa dipakai untuk build/test/e2e tanpa backend.
 4. **[selesai]** Tidak ada fallback seed saat mode live — ditampilkan state
    loading/error/retry agar kegagalan API tidak disamarkan (mis. 500 → toast).
 
+### Temuan E2E produksi lanjutan (2026-10-06, alur tulis)
+
+Smoke E2E per peran (login, cuti → approve manager, penilaian, presensi,
+payroll draft → item → publish) menemukan dan memperbaiki dua bug runtime:
+
+- **`attendance_check_in` 500 (PostgreSQL 42804).** `case when ... then 'LATE'
+  else 'PRESENT' end` bertipe `text`, sedangkan kolom `attendances.status`
+  bertipe enum `public.attendance_status` (tanpa implicit cast). Ditambahkan cast
+  eksplisit di `0003_rpc.sql` dan migrasi idempoten `0006_fix_attendance_check_in.sql`
+  untuk DB yang sudah termigrasi.
+- **Revisi penilaian selalu 409 `VERSION_CONFLICT`.** UI tidak menyimpan/mengirim
+  `expectedVersion` saat mengedit review yang sudah ada. `version` dari GET kini
+  disimpan di state dan disertakan pada PUT revisi.
+
+Hasil ulang setelah perbaikan: E2E produksi **27/27 lulus** (termasuk check-in
+201/409 dan payroll `DRAFT → net 8.800.000 → PUBLISHED`), `tsc`/`eslint`/32 unit
+test hijau. Regresi ditambahkan ke `scripts/http-e2e.mjs` (check-in bukan 500,
+EMPLOYEE `/employees` 403). CI `37508628014` dan Deploy `37508859558` sukses.
+
 ## 8. Batasan jujur
 
 - Uji RLS/smoke di repo ini menjalankan query sebagai user nyata, tetapi belum
