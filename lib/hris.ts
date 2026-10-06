@@ -1,6 +1,7 @@
 /** Demo policy, not legal entitlement. Backend must enforce these rules again. */
+export type EmployeeId = number | string;
 export type LeaveRequest = {
-  employee: number;
+  employee: EmployeeId;
   type: string;
   start: string;
   end: string;
@@ -38,7 +39,7 @@ export function workingDays(start: string, end: string) {
 }
 export function availableLeave(
   leaves: LeaveRequest[],
-  employee: number,
+  employee: EmployeeId,
   year: string,
 ) {
   return Math.max(

@@ -2,7 +2,7 @@
 
 Versi usulan: **1.0 — 4 Oktober 2026**. Untuk Kelompok Capstone Project HRIS, kelas 4E.
 
-**Mulai membaca dari file ini.** Paket ini adalah spesifikasi kerja bersama, bukan backend yang sudah berjalan. Belum ada migration, fungsi database, endpoint, RLS, atau koneksi Supabase yang dibuat oleh paket ini. Frontend tetap memakai data fiktif di memori.
+**Mulai membaca dari file ini.** Paket ini adalah spesifikasi kerja bersama, bukan backend yang sudah berjalan. Sebagian sudah diimplementasikan sebagai kode di repository ini (lihat [Implementasi backend](06_IMPLEMENTATION.md)); migration belum diterapkan ke project Supabase nyata karena menunggu kredensial, dan frontend masih memakai data fiktif di memori.
 
 ## 1. Acuan dan urutan baca
 
@@ -13,6 +13,7 @@ Versi usulan: **1.0 — 4 Oktober 2026**. Untuk Kelompok Capstone Project HRIS, 
 | 3      | [Akses dan RLS](03_ACCESS_AND_RLS.md)                  | Hak akses, grants, fungsi aman dan larangan akses                  |
 | 4      | [Backlog dan integrasi](04_BACKLOG_AND_INTEGRATION.md) | Pembagian tugas, milestone dan urutan pengerjaan                   |
 | 5      | [Tes dan penyerahan](05_TEST_AND_DELIVERY.md)          | Skenario uji, checklist penerimaan dan kebutuhan staging           |
+| 6      | [Implementasi backend](06_IMPLEMENTATION.md)           | Kode yang sudah ditulis di repo, cara menjalankan, dan sisa kerja |
 
 Acuan cakupan: [PRD/perencanaan](../Perencanaan_HRIS_Final_v2.md), khususnya Bagian 7–11 dan 23–26; [audit frontend](../AUDIT_FRONTEND.md). Paket ini memperjelas implementasi dan privasi. Jika ada perbedaan, sepakati revisi kontrak sebelum implementasi; jangan menganggap usulan ini sudah disetujui teman backend.
 
