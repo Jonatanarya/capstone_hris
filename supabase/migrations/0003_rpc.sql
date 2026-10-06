@@ -198,7 +198,7 @@ begin
     (employee_id, work_date, check_in_at, status, policy_version, policy_snapshot)
   values
     (v_emp, v_work_date, now(),
-     case when v_time > v_policy.work_start then 'LATE' else 'PRESENT' end,
+     (case when v_time > v_policy.work_start then 'LATE' else 'PRESENT' end)::public.attendance_status,
      v_policy.policy_version,
      jsonb_build_object('timezone', v_policy.timezone, 'workStart', v_policy.work_start,
                         'workEnd', v_policy.work_end))

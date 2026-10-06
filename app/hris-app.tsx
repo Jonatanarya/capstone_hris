@@ -367,7 +367,7 @@ export default function HrisApp({ today }: { today: string }) {
     [reviews, setReviews] = useState<
       Record<
         string,
-        { score: number; notes: string; assessedAt: string; assessor: string }
+        { score: number; notes: string; assessedAt: string; assessor: string; version?: number }
       >
     >({}),
     [extraDepts, setExtraDepts] = useState<string[]>([]),
@@ -669,6 +669,7 @@ export default function HrisApp({ today }: { today: string }) {
             notes: r.notes,
             assessedAt: r.assessedAt.slice(0, 10),
             assessor: r.employeeId === currentUser.id ? "Saya" : "Manager",
+            version: r.version,
           };
         }
         return next;
@@ -764,6 +765,11 @@ export default function HrisApp({ today }: { today: string }) {
       await hrApi.upsertReview(selected.id, periodFromLabel(period), {
         score,
         notes,
+        // Edit penilaian yang sudah ada butuh expectedVersion (optimistic lock);
+        // baris baru boleh tanpa expectedVersion.
+        ...(reviewFor(selected)?.version
+          ? { expectedVersion: reviewFor(selected)?.version }
+          : {}),
       });
       await refreshReviews();
       toast.success("Penilaian tersimpan");

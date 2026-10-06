@@ -71,6 +71,32 @@ try {
   });
   body = await res.json();
   check("Login akun DISABLED → 403 ACCOUNT_DISABLED", res.status === 403 && body?.error?.code === "ACCOUNT_DISABLED", `status=${res.status} code=${body?.error?.code}`);
+
+  // 5. Karyawan: presensi check-in tidak boleh 500 (regresi cast enum attendance_status)
+  res = await fetch(`${base}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "rizky.pratama@example.test", password: PW }),
+  });
+  const empCookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+  body = await res.json();
+  check("Login EMPLOYEE → 200 role EMPLOYEE", res.status === 200 && body?.data?.role === "EMPLOYEE", `status=${res.status} role=${body?.data?.role}`);
+
+  res = await fetch(`${base}/api/v1/attendance/check-in`, {
+    method: "POST",
+    headers: { Cookie: empCookie },
+  });
+  body = await res.json();
+  check(
+    "POST /attendance/check-in → 201/409 ALREADY_CHECKED_IN (bukan 500)",
+    res.status === 201 || (res.status === 409 && body?.error?.code === "ALREADY_CHECKED_IN"),
+    `status=${res.status} code=${body?.error?.code ?? body?.data?.status}`,
+  );
+
+  // 6. Karyawan tidak boleh membaca daftar semua karyawan (RLS/otorisasi)
+  res = await fetch(`${base}/api/v1/employees`, { headers: { Cookie: empCookie } });
+  body = await res.json();
+  check("EMPLOYEE GET /employees → 403 FORBIDDEN", res.status === 403 && body?.error?.code === "FORBIDDEN", `status=${res.status} code=${body?.error?.code}`);
 } catch (error) {
   check("E2E berjalan", false, error.message);
 } finally {
