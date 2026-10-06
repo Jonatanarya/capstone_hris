@@ -93,17 +93,23 @@ dan `private.operation_requests` tidak diekspos sebagai Data API.
 - `npm run test:http` — **5/5 lulus** (401 salah/no-session, 200 login HR + cookie,
   403 akun DISABLED).
 
-## 7. Langkah integrasi frontend (sisa pekerjaan)
+## 7. Langkah integrasi frontend (SELESAI — diverifikasi live 2026-10-06)
 
-1. Aktifkan mode backend ketika env Supabase ada (mis. `isSupabaseConfigured()`),
-   lalu ganti sumber data `app/hris-app.tsx` bertahap per modul memakai
-   `lib/api-client.ts`.
-2. Ganti pemilih "Ganti peran demo" dengan login nyata (`hrApi.login`) + `hrApi.me`;
-   hapus role dari state klien.
-3. Petakan DTO kontrak ke bentuk UI (Bagian 8 kontrak API): `id` UUID (bukan number),
+Status: keempat langkah sudah diterapkan. UI memilih sumber data lewat
+`lib/api-mode.ts` (`NEXT_PUBLIC_API_MODE=live`), memakai `lib/api-client.ts` +
+`lib/api-adapters.ts`, dan sudah diuji terhadap Supabase asli lewat
+`https://peoplespace-hris.vercel.app` (lihat log di `docs/DEPLOYMENT.md`).
+Catatan: gerbang mode memakai `NEXT_PUBLIC_API_MODE`, bukan `isSupabaseConfigured()`,
+supaya mode demo tetap bisa dipakai untuk build/test/e2e tanpa backend.
+
+1. **[selesai]** Aktifkan mode backend; ganti sumber data `app/hris-app.tsx` per modul
+   memakai `lib/api-client.ts` (29 method `hrApi.*` dipakai).
+2. **[selesai]** Pemilih "Ganti peran demo" diganti login nyata (`hrApi.login`) +
+   `hrApi.me`; pemilih peran dimatikan saat mode live (`if (live) return;`).
+3. **[selesai]** DTO kontrak dipetakan ke bentuk UI di `lib/api-adapters.ts`: `id` UUID,
    `period` `YYYY-MM`, uang `*Idr` integer, timestamp UTC → format WIB.
-4. Jangan memakai fallback seed saat mode terintegrasi — tampilkan state
-   loading/error/retry agar kegagalan API tidak disamarkan.
+4. **[selesai]** Tidak ada fallback seed saat mode live — ditampilkan state
+   loading/error/retry agar kegagalan API tidak disamarkan (mis. 500 → toast).
 
 ## 8. Batasan jujur
 

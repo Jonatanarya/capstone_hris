@@ -4,25 +4,46 @@ Pilihan awal: Next.js + Node.js 24 + Vercel, sesuai dokumen perencanaan. Tidak p
 
 ## Aktivasi Vercel
 
-Status (2026-10-06): **aktif**. Project `peoplespace-hris` sudah dibuat di team
-`jonatanaryas-2058s-projects`, secrets `VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID`
-dan variable `ENABLE_VERCEL_DEPLOY=true` sudah terpasang, dan deploy produksi
-pertama sudah berhasil (`https://peoplespace-hris.vercel.app`).
+Status (2026-10-06): **aktif penuh — frontend + backend + database terintegrasi**.
+Project `peoplespace-hris` (team `jonatanaryas-2058s-projects`) berisi secrets
+`VERCEL_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` + variable `ENABLE_VERCEL_DEPLOY=true`,
+dan environment Supabase (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_API_MODE=live`) untuk target *production* dan
+*preview*. Deploy produksi berhasil ke `https://peoplespace-hris.vercel.app` dan
+terbukti melayani data Supabase asli (lihat log verifikasi di bawah).
 
 1. **[selesai]** Buat/link project Vercel untuk repository `Jonatanarya/capstone_hris`. Root directory repository ini, framework Next.js, build `npm run build`, install `npm ci`, versi Node.js 24.
 2. **[selesai]** Ambil project ID dan organization/team ID dari pengaturan project atau `.vercel/project.json` setelah `vercel link`. Buat token di akun Vercel dengan hak minimum yang diperlukan. Jangan kirim token melalui chat atau commit.
 3. **[selesai]** Pada GitHub Settings → Secrets and variables → Actions, tambahkan secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`. Jika menggunakan environment secrets, letakkan di environment `production`.
 4. **[selesai]** Tambahkan variable repository `ENABLE_VERCEL_DEPLOY` dengan nilai `true` setelah provider disetujui dan secrets lengkap. Sebelumnya CD sengaja skipped.
 5. Jalankan ulang workflow **Frontend CI** untuk `main` atau push perubahan baru. Setelah sukses, **Deploy Vercel** mengambil SHA persis yang lolos CI dan memakai pull/build/deploy prebuilt.
-6. **Sisa:** set variabel environment Supabase pada project Vercel (`NEXT_PUBLIC_SUPABASE_URL`, publishable/anon key, dan `SUPABASE_SERVICE_ROLE_KEY` server-only) agar mode backend aktif. Tanpa itu `/api/v1/*` mengembalikan 500 dan halaman tetap memakai data contoh. Setelah terisi, buka URL deployment dan ulangi smoke test: dashboard, pergantian peran, navigasi ponsel, cuti dan payroll.
+6. **[selesai]** Variabel environment Supabase pada project Vercel (`NEXT_PUBLIC_SUPABASE_URL`, publishable key, dan `SUPABASE_SERVICE_ROLE_KEY` server-only) plus `NEXT_PUBLIC_API_MODE=live` sudah dipasang untuk production + preview, sehingga `/api/v1/*` berjalan terhadap database Supabase asli.
 
 `vercel.json` menonaktifkan deployment otomatis Git agar tidak melompati quality gate Actions. Bila memilih integrasi Git bawaan, hapus pilihan tersebut dan rancang gerbang promotion sesuai kebutuhan; jangan menjalankan dua pipeline produksi sekaligus.
 
-Deploy produksi pertama berhasil pada 2026-10-06 (`peoplespace-hris.vercel.app`,
-home `200` dengan data contoh). Token Vercel pernah dibagikan melalui chat: **rotasi
-token di Vercel Dashboard → Settings → Tokens** setelah verifikasi selesai lalu
-perbarui secret `VERCEL_TOKEN`. GitHub Pages adalah alternatif demo statis, bukan
-deployment server Next.js; jangan mengaktifkan kedua provider tanpa keputusan kelompok.
+Deploy produksi pertama berhasil pada 2026-10-06 (`peoplespace-hris.vercel.app`).
+Token Vercel pernah dibagikan melalui chat: **rotasi token di Vercel Dashboard →
+Settings → Tokens** setelah verifikasi selesai lalu perbarui secret `VERCEL_TOKEN`.
+GitHub Pages adalah alternatif demo statis, bukan deployment server Next.js;
+jangan mengaktifkan kedua provider tanpa keputusan kelompok.
+
+### Log verifikasi live (2026-10-06, mode `NEXT_PUBLIC_API_MODE=live`)
+
+Diuji langsung ke `https://peoplespace-hris.vercel.app`:
+
+- `GET /` → **200**.
+- Tanpa sesi: `GET /api/v1/me` → **401** (sebelumnya 500 saat Supabase belum di-set).
+- `POST /api/v1/auth/login` `nadia.putri@example.test` → **200**, `ADMIN_HR`, cookie sesi ter-set.
+- Sesi ADMIN_HR: `me` 200, `dashboard` **200** (`scope=ORGANIZATION`, `period=2026-10`),
+  `employees` **200** (10 baris), `departments` 200, `positions` 200, `leave-requests` 200,
+  `attendance` 200, `payroll-runs` 200, `accounts` 200, `reports/employees` 200.
+- RLS terbukti di produksi: MANAGER `dimas.saputra` → `/employees` **200**;
+  EMPLOYEE `rizky.pratama` → `/employees` **403 FORBIDDEN**;
+  akun nonaktif `bima.aditya` → login **403** (`EMPLOYEE_INACTIVE`).
+
+Sumber data nyata memakai project Supabase `btzqutfgxsiyerfrzrhu`
+(12 tabel, RLS aktif, 13 RPC) dengan akun uji seed (sandi `Demo-Password-123!`).
+Akun uji hanya untuk demo akademik; ganti sandi sebelum dipakai publik.
 
 ## Pengamanan GitHub
 
