@@ -12,6 +12,10 @@ begin
   perform pg_temp.check_result(label,code=expected or (expected='PERMISSION' and code like 'permission denied%'));
 end $$;
 grant all on pg_temp.regression_results to authenticated,service_role;
+-- Only inside this rollback-only test transaction: normalize unrelated demo
+-- salaries so the publication tests isolate their own incomplete-salary cases.
+update private.employee_compensation c set base_salary_idr=1000000 from public.employees e
+  where e.id=c.employee_id and e.employment_status='ACTIVE' and c.base_salary_idr<=0;
 do $tests$
 declare hr uuid; manager uuid; emp uuid; disabled uuid; invited uuid; inactive uuid;
   emp_id uuid:='e0000000-0000-4000-8000-000000000002';
@@ -50,21 +54,51 @@ begin
   select * into run from public.create_payroll_run('2099-12');
   select * into item from public.payroll_items where payroll_run_id=run.id and employee_id=emp_id;
   select * into item from public.update_payroll_item(item.id,100,200,50,item.version);
+  perform pg_temp.check_result('Component edit bumps run version',(select version from public.payroll_runs where id=run.id)=run.version+1);
+  select * into run from public.payroll_runs where id=run.id;
   perform pg_temp.check_result('Payroll computation',item.net_salary_idr=item.base_salary_idr+250);
   salary:=item.base_salary_idr;
   select version into v from public.employees where id=emp_id;
   perform public.update_employee(emp_id,v,p_base_salary_idr=>salary+100);
+  perform pg_temp.check_result('Salary change detected',(public.payroll_run_readiness(run.id)->>'staleItemCount')::int=1);
+  perform pg_temp.expect_error('Stale draft cannot publish',format('select public.publish_payroll_run(%L,%s)',run.id,run.version),'PAYROLL_NOT_READY');
+  select version into v from public.employees where id=employee.id;
+  perform public.update_employee(employee.id,v,p_base_salary_idr=>0);
+  perform pg_temp.check_result('Zero salary is not configured',(public.payroll_run_readiness(run.id)->>'missingSalaryCount')::int=1);
+  perform pg_temp.expect_error('Zero salary cannot publish',format('select public.publish_payroll_run(%L,%s)',run.id,run.version),'PAYROLL_NOT_READY');
+  select version into v from public.employees where id=employee.id;
+  perform public.update_employee(employee.id,v,p_base_salary_idr=>1234567);
+  select * into employee from public.create_employee('CI-ROLLBACK-NEW','New payroll regression','ci-payroll-new@example.test',
+    'd0000000-0000-4000-8000-000000000002','b0000000-0000-4000-8000-000000000002','ACTIVE','2026-01-01','081234567890','Rollback',2345678);
+  perform pg_temp.check_result('New employee detected',(public.payroll_run_readiness(run.id)->>'missingItemCount')::int=1);
+  perform pg_temp.expect_error('Missing employee prevents publication',format('select public.publish_payroll_run(%L,%s)',run.id,run.version),'PAYROLL_NOT_READY');
+  v:=run.version;
+  select * into run from public.sync_payroll_run(run.id,run.version);
+  perform pg_temp.check_result('Sync adds new employee',(select base_salary_idr=2345678 from public.payroll_items where payroll_run_id=run.id and employee_id=employee.id));
+  perform pg_temp.check_result('Sync preserves components',(select allowance_idr=100 and bonus_idr=200 and deduction_idr=50 from public.payroll_items where id=item.id));
+  perform pg_temp.expect_error('Sync version checked',format('select public.sync_payroll_run(%L,%s)',run.id,v),'VERSION_CONFLICT');
+  perform pg_temp.check_result('Synced run ready',(public.payroll_run_readiness(run.id)->>'ready')::boolean);
+  select version into v from public.employees where id=employee.id;
+  perform public.update_employee(employee.id,v,p_employment_status=>'INACTIVE');
+  perform pg_temp.check_result('Inactive draft item detected',(public.payroll_run_readiness(run.id)->>'inactiveItemCount')::int=1);
+  select * into run from public.sync_payroll_run(run.id,run.version);
+  perform pg_temp.check_result('Sync removes only inactive draft item',not exists(select 1 from public.payroll_items where payroll_run_id=run.id and employee_id=employee.id));
   perform public.publish_payroll_run(run.id,run.version);
   select * into item from public.payroll_items where payroll_run_id=run.id and employee_id=emp_id;
   perform pg_temp.check_result('Publish refreshes compensation',item.base_salary_idr=salary+100 and item.net_salary_idr=salary+350);
   perform pg_temp.expect_error('Published payroll immutable',format('select public.update_payroll_item(%L,0,0,0,%s)',item.id,item.version),'PAYROLL_ALREADY_PUBLISHED');
+  perform pg_temp.expect_error('Published run cannot sync',format('select public.sync_payroll_run(%L,%s)',run.id,run.version),'PAYROLL_ALREADY_PUBLISHED');
   perform pg_temp.expect_error('Null publish version rejected',format('select public.publish_payroll_run(%L,null)',run.id),'VALIDATION_ERROR');
   select * into run from public.create_payroll_run('2099-11');
   select * into item from public.payroll_items where payroll_run_id=run.id and employee_id=emp_id;
   perform public.update_payroll_item(item.id,0,0,item.base_salary_idr,item.version);
+  select * into run from public.payroll_runs where id=run.id;
   select version into v from public.employees where id=emp_id;
   perform public.update_employee(emp_id,v,p_base_salary_idr=>100);
-  perform pg_temp.expect_error('Publish checks refreshed deduction',format('select public.publish_payroll_run(%L,%s)',run.id,run.version),'VALIDATION_ERROR');
+  perform pg_temp.expect_error('Publish checks refreshed deduction',format('select public.publish_payroll_run(%L,%s)',run.id,run.version),'PAYROLL_NOT_READY');
+  perform pg_temp.expect_error('Sync excessive deduction rolls back',format('select public.sync_payroll_run(%L,%s)',run.id,run.version),'VALIDATION_ERROR');
+  -- Invitation tests require an active, unlinked employee, not the inactive payroll test target.
+  select * into employee from public.employees where employee_no='CI-ROLLBACK';
   select public.claim_account_invitation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',employee.id,'EMPLOYEE',repeat('a',64)) into claim;
   perform pg_temp.check_result('Private invitation claim',claim->>'state'='PROCESSING' and claim->>'operationId' is not null);
   perform pg_temp.expect_error('Same key does not resend',format('select public.claim_account_invitation(''aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'',%L,''EMPLOYEE'',repeat(''a'',64))',employee.id),'OPERATION_IN_PROGRESS');
@@ -84,6 +118,8 @@ begin
   perform pg_temp.expect_error('Quota enforced','select public.create_leave_request(''ANNUAL'',''2099-02-02'',''2099-02-27'',''Quota'')','LEAVE_BALANCE_EXCEEDED');
   perform set_config('request.jwt.claim.sub',manager::text,true);
   perform pg_temp.check_result('Manager payroll hidden',(select count(*) from public.payroll_items)=0);
+  perform pg_temp.expect_error('Manager cannot read readiness',format('select public.payroll_run_readiness(%L)',run.id),'FORBIDDEN');
+  perform pg_temp.expect_error('Manager cannot sync payroll',format('select public.sync_payroll_run(%L,%s)',run.id,run.version),'FORBIDDEN');
   perform pg_temp.expect_error('Manager leave bypass denied','select public.create_leave_request(''PERMISSION'',''2099-01-05'',''2099-01-05'',''Bypass'')','FORBIDDEN');
   perform public.decide_leave_request(leave_row.id,'REJECTED','Regression rollback',leave_row.version);
   perform pg_temp.check_result('Manager decision metadata',(select status='REJECTED' and decided_by=manager and decided_at is not null from public.leave_requests where id=leave_row.id));

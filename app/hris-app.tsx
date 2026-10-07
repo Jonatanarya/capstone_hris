@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useCallback,
+  useRef,
   type ReactNode,
   type FormEvent,
   type ComponentProps,
@@ -83,6 +84,7 @@ import {
   payrollError,
 } from "@/lib/hris";
 import { isLiveMode } from "@/lib/api-mode";
+import { payrollNet, salaryConfigured } from "@/lib/payroll";
 import {
   hrApi,
   ApiClientError,
@@ -104,6 +106,7 @@ import {
   type AccountDto,
   type PayrollItemDto,
   type PayrollRunDto,
+  type PayrollReadinessDto,
 } from "@/lib/api-adapters";
 type Role = "Admin HR" | "Manager" | "Karyawan";
 type Person = {
@@ -404,6 +407,13 @@ export default function HrisApp({ today }: { today: string }) {
     [payRun, setPayRun] = useState<PayrollRunDto | null>(null),
     [payBusy, setPayBusy] = useState(false);
   const [accountBusy, setAccountBusy] = useState<string | null>(null);
+  const [payReadiness, setPayReadiness] = useState<PayrollReadinessDto | null>(
+    null,
+  );
+  const [payLoading, setPayLoading] = useState(false);
+  const [payError, setPayError] = useState("");
+  const [payPeriod, setPayPeriod] = useState("");
+  const payrollLoadId = useRef(0);
   const [employeeBusy, setEmployeeBusy] = useState(false);
   const [inviteEmployeeId, setInviteEmployeeId] = useState("");
   const [inviteKeys, setInviteKeys] = useState<Record<string, string>>({});
@@ -479,6 +489,24 @@ export default function HrisApp({ today }: { today: string }) {
     ),
     pending = visibleLeaves.filter((l) => l.status === "Menunggu");
   const active = team.filter((p) => p.status === "Aktif");
+  const payrollPeople: Person[] = live
+    ? (payPeriod === periodFromLabel(period) ? payItems : []).map((item) => ({
+        id: item.employeeId,
+        name: item.fullName,
+        employeeNo: item.employeeNo,
+        dept: item.departmentName,
+        position: item.positionName,
+        salary: item.baseSalaryIdr,
+        email: "",
+        status: "Aktif",
+        score: 0,
+        phone: "",
+        address: "",
+        joinDate: "",
+      }))
+    : role === "Karyawan" && !processedPeriods.includes(period)
+      ? []
+      : active;
   const remaining = live
     ? (liveBalance ?? "—")
     : availableLeave(leaves, currentUser.id, today.slice(0, 4));
@@ -491,7 +519,7 @@ export default function HrisApp({ today }: { today: string }) {
     records.some((r) => r.employee === p.id && r.date === today && r.checkIn),
   );
   const processed = live
-    ? payRun?.status === "PUBLISHED"
+    ? payPeriod === periodFromLabel(period) && payRun?.status === "PUBLISHED"
     : processedPeriods.includes(period);
   const reviewFor = (p: Person) =>
     reviews[p.id + period] ??
@@ -658,20 +686,41 @@ export default function HrisApp({ today }: { today: string }) {
     if (live && role === "Manager") return;
     const apiPeriod = periodFromLabel(period);
     if (!apiPeriod) return;
+    const loadId = ++payrollLoadId.current;
+    setPayLoading(true);
+    setPayError("");
+    setPayReadiness(null);
+    setPayRun(null);
+    setPayItems([]);
     try {
       const runs = await hrApi.payrollRuns(apiPeriod);
       const run = runs.find((r) => r.period === apiPeriod) ?? null;
-      setPayRun(run);
       if (!run) {
-        setPayItems([]);
-        return;
+        if (loadId === payrollLoadId.current) setPayPeriod(apiPeriod);
+        return true;
       }
-      const items = await hrApi.payrollItems(run.id);
+      const [items, readiness] = await Promise.all([
+        hrApi.payrollItems(run.id),
+        role === "Admin HR" && run.status === "DRAFT"
+          ? hrApi.payrollReadiness(run.id)
+          : Promise.resolve(null),
+      ]);
+      if (loadId !== payrollLoadId.current) return false;
+      setPayRun(run);
       setPayItems(items);
+      setPayReadiness(readiness);
+      setPayPeriod(apiPeriod);
+      return true;
     } catch (error) {
-      if (error instanceof ApiClientError && error.status >= 500) {
-        toast.error(error.message);
-      }
+      if (loadId !== payrollLoadId.current) return false;
+      const message =
+        error instanceof Error ? error.message : "Payroll gagal dimuat";
+      setPayError(message);
+      setPayPeriod("");
+      toast.error(message);
+      return false;
+    } finally {
+      if (loadId === payrollLoadId.current) setPayLoading(false);
     }
   }, [live, role, period]);
   const runPayroll = async () => {
@@ -694,16 +743,47 @@ export default function HrisApp({ today }: { today: string }) {
   };
   const publishRun = async () => {
     if (!payRun) return;
+    if (
+      payBusy ||
+      !payReadiness?.ready ||
+      payPeriod !== periodFromLabel(period)
+    ) {
+      toast.error(
+        "Lengkapi gaji pokok dan sinkronkan draft sebelum menerbitkan.",
+      );
+      return;
+    }
     setPayBusy(true);
     try {
       await hrApi.publishPayrollRun(payRun.id, payRun.version);
       await loadPayroll();
+      setDialog(null);
       toast.success("Payroll " + period + " diterbitkan");
     } catch (error) {
       toast.error(
         error instanceof ApiClientError
           ? error.message
           : "Payroll gagal diterbitkan",
+      );
+      // Refresh readiness/version after a concurrent HR edit or publication.
+      await loadPayroll();
+      setDialog(null);
+    } finally {
+      setPayBusy(false);
+    }
+  };
+  const syncPayroll = async () => {
+    if (!payRun || payBusy || payLoading || payRun.status !== "DRAFT") return;
+    setPayBusy(true);
+    try {
+      await hrApi.syncPayrollRun(payRun.id, payRun.version);
+      await loadPayroll();
+      toast.success(
+        "Draft disinkronkan dengan karyawan aktif dan gaji pokok terbaru.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Sinkronisasi gagal",
       );
     } finally {
       setPayBusy(false);
@@ -814,6 +894,7 @@ export default function HrisApp({ today }: { today: string }) {
         });
       }
       await loadDirectory();
+      if (payRun?.status === "DRAFT") await loadPayroll();
       toast.success("Data berhasil disimpan");
       setDialog(null);
     } catch (error) {
@@ -856,6 +937,20 @@ export default function HrisApp({ today }: { today: string }) {
       toast.error("Karyawan tidak ada pada payroll periode ini");
       return;
     }
+    if (
+      payBusy ||
+      payLoading ||
+      processed ||
+      payPeriod !== periodFromLabel(period)
+    )
+      return;
+    if (payrollNet(item.baseSalaryIdr, allowance, bonus, deduction) === null) {
+      toast.error(
+        "Komponen harus berupa rupiah bulat; potongan tidak boleh melebihi gaji bruto.",
+      );
+      return;
+    }
+    setPayBusy(true);
     try {
       await hrApi.updatePayrollItem(item.id, {
         allowanceIdr: allowance,
@@ -872,6 +967,8 @@ export default function HrisApp({ today }: { today: string }) {
           ? error.message
           : "Payroll gagal disimpan",
       );
+    } finally {
+      setPayBusy(false);
     }
   };
   const rejectLeaveLive = async (f: FormData) => {
@@ -1121,7 +1218,7 @@ export default function HrisApp({ today }: { today: string }) {
     if (live) {
       const item = payItems.find((i) => i.employeeId === p.id);
       if (item) return item.netSalaryIdr;
-      return p.salary;
+      return 0;
     }
     const v = pay[p.id + period];
     return (
@@ -1143,7 +1240,7 @@ export default function HrisApp({ today }: { today: string }) {
           deduction: item.deductionIdr,
         };
       }
-      return { salary: p.salary, allowance: 0, bonus: 0, deduction: 0 };
+      return { salary: 0, allowance: 0, bonus: 0, deduction: 0 };
     }
     const v = pay[p.id + period];
     return {
@@ -1372,7 +1469,7 @@ export default function HrisApp({ today }: { today: string }) {
         dept: "Engineering",
         position: "",
         status: "Aktif",
-        salary: 7000000,
+        salary: live ? 0 : 7000000,
         score: 0,
         employeeNo: "",
         phone: "",
@@ -1910,13 +2007,19 @@ export default function HrisApp({ today }: { today: string }) {
                 <Button
                   disabled={
                     payBusy ||
+                    (live &&
+                      (payLoading ||
+                        !!payError ||
+                        payPeriod !== periodFromLabel(period) ||
+                        (payRun?.status === "DRAFT" &&
+                          !payReadiness?.ready))) ||
                     active.length === 0 ||
                     (live ? payRun?.status === "PUBLISHED" : processed)
                   }
                   onClick={() => {
                     if (live) {
                       void (payRun && payRun.status === "DRAFT"
-                        ? publishRun()
+                        ? setDialog("publish-payroll")
                         : runPayroll());
                       return;
                     }
@@ -2591,10 +2694,117 @@ export default function HrisApp({ today }: { today: string }) {
                 </Button>
               </div>
               <p className="table-meta">
-                {processed
-                  ? "Diterbitkan · komponen periode dikunci"
-                  : "Draft simulasi · slip tersedia setelah Admin HR menerbitkan"}
+                {live && payLoading
+                  ? "Memuat payroll…"
+                  : processed
+                    ? "Diterbitkan · komponen periode dikunci"
+                    : live
+                      ? payRun
+                        ? "Draft · belum diterbitkan; bukan pembayaran atau transfer bank"
+                        : "Belum ada payroll periode ini · buat draft terlebih dahulu"
+                      : "Draft simulasi · slip tersedia setelah Admin HR menerbitkan"}
               </p>
+              {live && role === "Admin HR" && payRun?.status === "DRAFT" && (
+                <>
+                  <div className="toolbar plain">
+                    <Button
+                      variant="outline"
+                      disabled={payBusy || payLoading}
+                      onClick={() => void syncPayroll()}
+                    >
+                      Sinkronkan draft
+                    </Button>
+                    <span className="muted">
+                      Memperbarui gaji pokok dan daftar karyawan aktif, bukan
+                      menerbitkan.
+                    </span>
+                  </div>
+                  {payReadiness && !payReadiness.ready && (
+                    <Panel>
+                      <div role="alert">
+                        <strong>Payroll belum siap diterbitkan</strong>
+                        {payReadiness.missingSalaryCount > 0 && (
+                          <p>
+                            {payReadiness.missingSalaryCount} karyawan belum
+                            memiliki gaji pokok. Lengkapi melalui edit karyawan;
+                            Rp0 bukan gaji siap proses.
+                          </p>
+                        )}
+                        {payReadiness.missingItemCount +
+                          payReadiness.inactiveItemCount +
+                          payReadiness.staleItemCount >
+                          0 && (
+                          <p>
+                            Data karyawan/gaji berubah. Sinkronkan draft agar
+                            daftar dan nominal sesuai data terbaru.
+                          </p>
+                        )}
+                        {payReadiness.invalidDeductionCount > 0 && (
+                          <p>
+                            {payReadiness.invalidDeductionCount} potongan
+                            melebihi gaji bruto terbaru. Koreksi potongan
+                            sebelum sinkronisasi.
+                          </p>
+                        )}
+                        {payReadiness.missingSalaryEmployees.length > 0 && (
+                          <details>
+                            <summary>Karyawan yang gajinya belum diisi</summary>
+                            <ul
+                              style={{
+                                maxHeight: 240,
+                                overflowY: "auto",
+                                paddingLeft: 20,
+                              }}
+                            >
+                              {payReadiness.missingSalaryEmployees.map(
+                                (employee) => (
+                                  <li
+                                    key={employee.id}
+                                    style={{
+                                      padding: "8px 0",
+                                      overflowWrap: "anywhere",
+                                    }}
+                                  >
+                                    {employee.fullName} · {employee.employeeNo}{" "}
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={employeeBusy}
+                                      onClick={() =>
+                                        void showPerson(
+                                          { ...currentUser, id: employee.id },
+                                          "employee",
+                                        )
+                                      }
+                                    >
+                                      Isi gaji
+                                    </Button>
+                                  </li>
+                                ),
+                              )}
+                            </ul>
+                            {payReadiness.missingSalaryCount >
+                              payReadiness.missingSalaryEmployees.length && (
+                              <p>
+                                Menampilkan 20 pertama; karyawan lainnya
+                                tersedia di direktori.
+                              </p>
+                            )}
+                          </details>
+                        )}
+                      </div>
+                    </Panel>
+                  )}
+                </>
+              )}
+              {live && payError && (
+                <Panel>
+                  <p role="alert">{payError}</p>
+                  <Button variant="outline" onClick={() => void loadPayroll()}>
+                    Muat ulang payroll
+                  </Button>
+                </Panel>
+              )}
               <Panel title="Data payroll">
                 <Table>
                   <TableHeader>
@@ -2611,54 +2821,91 @@ export default function HrisApp({ today }: { today: string }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(role === "Karyawan" && !processed ? [] : active).map(
-                      (p) => (
-                        <TableRow key={p.id}>
-                          <TableCell>
-                            <strong>{p.name}</strong>
-                            <small className="cell-small">{period}</small>
-                          </TableCell>
-                          <TableCell>{money(payFor(p).salary)}</TableCell>
-                          <TableCell>
-                            {money(payFor(p).allowance + payFor(p).bonus)}
-                          </TableCell>
-                          <TableCell>
-                            <strong>{money(total(p))}</strong>
-                          </TableCell>
-                          <TableCell>
+                    {payrollPeople.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <strong>{p.name}</strong>
+                          <small className="cell-small">{period}</small>
+                        </TableCell>
+                        <TableCell>
+                          {live &&
+                          !processed &&
+                          !salaryConfigured(payFor(p).salary)
+                            ? "Belum diisi"
+                            : money(payFor(p).salary)}
+                        </TableCell>
+                        <TableCell>
+                          {money(payFor(p).allowance + payFor(p).bonus)}
+                        </TableCell>
+                        <TableCell>
+                          <strong>
+                            {live &&
+                            !processed &&
+                            !salaryConfigured(payFor(p).salary)
+                              ? "Belum siap"
+                              : money(total(p))}
+                          </strong>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelected(p);
+                              setDialog("payslip");
+                            }}
+                          >
+                            {live && !processed ? "Tinjau draft" : "Slip gaji"}
+                          </Button>
+                          {role === "Admin HR" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={processed || payBusy || payLoading}
+                              aria-label={
+                                live ? `Edit komponen ${p.name}` : undefined
+                              }
+                              onClick={() => {
+                                setSelected(p);
+                                const v = payFor(p);
+                                setAllowance(v.allowance);
+                                setBonus(v.bonus);
+                                setDeduction(v.deduction);
+                                setDialog("payroll");
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          {live && role === "Admin HR" && !processed && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                setSelected(p);
-                                setDialog("payslip");
-                              }}
+                              disabled={employeeBusy || payBusy}
+                              onClick={() => void showPerson(p, "employee")}
                             >
-                              Slip gaji
+                              Edit gaji pokok
                             </Button>
-                            {role === "Admin HR" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={processed}
-                                onClick={() => {
-                                  setSelected(p);
-                                  const v = payFor(p);
-                                  setAllowance(v.allowance);
-                                  setBonus(v.bonus);
-                                  setDeduction(v.deduction);
-                                  setDialog("payroll");
-                                }}
-                              >
-                                Edit
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ),
-                    )}
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
+                {payrollPeople.length === 0 && (
+                  <div className="empty">
+                    <Wallet />
+                    <strong>
+                      {payLoading
+                        ? "Memuat data payroll…"
+                        : payError
+                          ? "Data payroll tidak tersedia"
+                          : role === "Karyawan"
+                            ? "Belum ada slip gaji yang diterbitkan untuk Anda."
+                            : "Belum ada item payroll periode ini."}
+                    </strong>
+                  </div>
+                )}
               </Panel>
             </>
           )}
@@ -3021,6 +3268,7 @@ export default function HrisApp({ today }: { today: string }) {
                     "rename-department": "Ubah nama departemen",
                     "rename-position": "Ubah nama jabatan",
                     invite: "Undang akun pengguna",
+                    "publish-payroll": "Konfirmasi penerbitan payroll",
                   } as Record<string, string>
                 )[dialog ?? "help"]
               }
@@ -3031,6 +3279,31 @@ export default function HrisApp({ today }: { today: string }) {
                 : "Workspace demo · data contoh selama sesi ini."}
             </DialogDescription>
           </DialogHeader>
+          {dialog === "publish-payroll" && (
+            <div>
+              <p>
+                Terbitkan payroll {period} untuk {payItems.length} karyawan?
+                Setelah diterbitkan, komponen dikunci dan slip gaji dapat
+                dilihat pemiliknya.
+              </p>
+              <p>Proses ini tidak mentransfer uang ke rekening.</p>
+              <div className="inline-actions">
+                <Button
+                  variant="outline"
+                  disabled={payBusy}
+                  onClick={() => setDialog(null)}
+                >
+                  Batal
+                </Button>
+                <Button
+                  disabled={payBusy || !payReadiness?.ready}
+                  onClick={() => void publishRun()}
+                >
+                  {payBusy ? "Menerbitkan…" : "Ya, terbitkan"}
+                </Button>
+              </div>
+            </div>
+          )}
           {[
             "employee",
             "leave",
@@ -3241,7 +3514,9 @@ export default function HrisApp({ today }: { today: string }) {
                 <>
                   <p className="full">
                     {selected.name} · {period} · Gaji pokok{" "}
-                    {money(live ? payFor(selected).salary : selected.salary)}
+                    {live && !salaryConfigured(payFor(selected).salary)
+                      ? "belum diisi — lengkapi data karyawan"
+                      : money(live ? payFor(selected).salary : selected.salary)}
                   </p>
                   <label>
                     Tunjangan
@@ -3281,7 +3556,25 @@ export default function HrisApp({ today }: { today: string }) {
                   <div className="full payroll-total">
                     Gaji bersih
                     <strong>
-                      {money(selected.salary + allowance + bonus - deduction)}
+                      {live && !salaryConfigured(payFor(selected).salary)
+                        ? "Belum siap"
+                        : payrollNet(
+                              live ? payFor(selected).salary : selected.salary,
+                              allowance,
+                              bonus,
+                              deduction,
+                            ) === null
+                          ? "Komponen tidak valid"
+                          : money(
+                              payrollNet(
+                                live
+                                  ? payFor(selected).salary
+                                  : selected.salary,
+                                allowance,
+                                bonus,
+                                deduction,
+                              )!,
+                            )}
                     </strong>
                   </div>
                 </>
@@ -3332,7 +3625,13 @@ export default function HrisApp({ today }: { today: string }) {
                 >
                   Batal
                 </Button>
-                <Button type="submit" disabled={live && accountBusy !== null}>
+                <Button
+                  type="submit"
+                  disabled={
+                    live &&
+                    (accountBusy !== null || (dialog === "payroll" && payBusy))
+                  }
+                >
                   {dialog === "leave"
                     ? "Kirim pengajuan"
                     : dialog === "invite"
@@ -3404,13 +3703,31 @@ export default function HrisApp({ today }: { today: string }) {
               ].map(([k, v]) => (
                 <div className="payslip-row" key={String(k)}>
                   <span>{k}</span>
-                  <strong>{money(Number(v))}</strong>
+                  <strong>
+                    {live &&
+                    !processed &&
+                    k === "Gaji pokok" &&
+                    !salaryConfigured(Number(v))
+                      ? "Belum diisi"
+                      : money(Number(v))}
+                  </strong>
                 </div>
               ))}
               <div className="payroll-total">
-                Gaji bersih<strong>{money(total(selected))}</strong>
+                Gaji bersih
+                <strong>
+                  {live &&
+                  !processed &&
+                  !salaryConfigured(payFor(selected).salary)
+                    ? "Belum siap"
+                    : money(total(selected))}
+                </strong>
               </div>
-              <Button className="w-full" onClick={() => window.print()}>
+              <Button
+                className="w-full"
+                disabled={live && !processed}
+                onClick={() => window.print()}
+              >
                 <Download size={16} />
                 Cetak atau simpan PDF
               </Button>

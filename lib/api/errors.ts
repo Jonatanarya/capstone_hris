@@ -76,6 +76,12 @@ const KNOWN: Record<
     code: "PAYROLL_ALREADY_PUBLISHED",
     message: "Payroll sudah diterbitkan",
   },
+  PAYROLL_NOT_READY: {
+    status: 422,
+    code: "PAYROLL_NOT_READY",
+    message:
+      "Payroll belum siap. Lengkapi gaji pokok, periksa potongan, lalu sinkronkan draft sebelum menerbitkan.",
+  },
   IDEMPOTENCY_CONFLICT: {
     status: 409,
     code: "IDEMPOTENCY_CONFLICT",

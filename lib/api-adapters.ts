@@ -44,11 +44,19 @@ export function uiStatus(employmentStatus: string) {
 }
 
 export function uiRole(role: BackendRole): UiRole {
-  return role === "ADMIN_HR" ? "Admin HR" : role === "MANAGER" ? "Manager" : "Karyawan";
+  return role === "ADMIN_HR"
+    ? "Admin HR"
+    : role === "MANAGER"
+      ? "Manager"
+      : "Karyawan";
 }
 
 export function backendRole(role: UiRole): BackendRole {
-  return role === "Admin HR" ? "ADMIN_HR" : role === "Manager" ? "MANAGER" : "EMPLOYEE";
+  return role === "Admin HR"
+    ? "ADMIN_HR"
+    : role === "Manager"
+      ? "MANAGER"
+      : "EMPLOYEE";
 }
 
 /** Petakan satu karyawan DTO → UiPerson. Field yang tidak ada di DTO diberi default aman. */
@@ -87,8 +95,18 @@ export function personFromMe(me: Me): UiPerson {
 
 /** Bulan UI ("September 2026") ⇄ periode API ("2026-09"). */
 const MONTHS_ID = [
-  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
 ];
 
 export function periodFromLabel(label: string) {
@@ -255,7 +273,29 @@ export type PayrollItemDto = {
   version: number;
 };
 
-export type MasterDto = { id: string; name: string; status: string; version: number };
+export type PayrollReadinessDto = {
+  status: "DRAFT" | "PUBLISHED";
+  ready: boolean;
+  missingSalaryCount: number;
+  missingSalaryEmployees: {
+    id: string;
+    employeeNo: string;
+    fullName: string;
+  }[];
+  missingItemCount: number;
+  inactiveItemCount: number;
+  staleItemCount: number;
+  invalidDeductionCount: number;
+  itemCount: number;
+  activeEmployeeCount: number;
+};
+
+export type MasterDto = {
+  id: string;
+  name: string;
+  status: string;
+  version: number;
+};
 
 export type AccountDto = {
   userId: string;

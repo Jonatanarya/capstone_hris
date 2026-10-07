@@ -43,11 +43,17 @@ if (ciDatabase) {
       "Provide isolated CI database or Supabase URL + private Management token for rollback-only tests.",
     );
   const ref = new URL(url).hostname.split(".")[0];
-  const pending = process.argv.includes("--with-pending")
-    ? ["0007_business_hardening.sql", "0008_account_lifecycle.sql"]
-        .map((f) => read("supabase/migrations/" + f))
-        .join("\n")
-    : "";
+  const pendingFiles = [
+    ...(process.argv.includes("--with-pending")
+      ? ["0007_business_hardening.sql", "0008_account_lifecycle.sql"]
+      : []),
+    ...(process.argv.includes("--pending-payroll")
+      ? ["0009_payroll_readiness.sql"]
+      : []),
+  ];
+  const pending = pendingFiles
+    .map((f) => read("supabase/migrations/" + f))
+    .join("\n");
   const response = await fetch(
     `https://api.supabase.com/v1/projects/${ref}/database/query`,
     {

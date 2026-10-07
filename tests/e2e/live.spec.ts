@@ -32,6 +32,14 @@ const summary = (employee: typeof hr) => ({
   contact: undefined,
   compensation: undefined,
 });
+type PayrollFixture = {
+  salary: number;
+  published?: boolean;
+  notReady?: boolean;
+  readinessError?: boolean;
+  publishCount?: number;
+  syncCount?: number;
+};
 async function navigate(page: Page, label: string) {
   if (page.viewportSize()!.width < 768)
     await page.getByRole("button", { name: "Toggle Sidebar" }).click();
@@ -44,8 +52,11 @@ async function loginWithMocks(
   page: Page,
   brokenDetail = false,
   identifier = "nadia@example.test",
+  payrollFixture?: PayrollFixture,
 ) {
   let signed = false;
+  let payrollPublished = payrollFixture?.published ?? false;
+  let payrollVersion = 1;
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace("/api/v1", "");
@@ -66,6 +77,11 @@ async function loginWithMocks(
     } else if (path === "/employees") data = [summary(hr), summary(member)];
     else if (path.startsWith("/employees/")) {
       data = path.endsWith(member.id) ? member : hr;
+      if (payrollFixture && path.endsWith(member.id))
+        data = {
+          ...member,
+          compensation: { baseSalaryIdr: payrollFixture.salary },
+        };
       if (brokenDetail) status = 503;
     } else if (path === "/departments")
       data = [
@@ -114,7 +130,83 @@ async function loginWithMocks(
           version: 3,
         },
       ];
-    else if (path === "/dashboard")
+    else if (payrollFixture && path === "/payroll-runs")
+      data = [
+        {
+          id: "a0000000-0000-4000-8000-000000000001",
+          period: url.searchParams.get("period"),
+          status: payrollPublished ? "PUBLISHED" : "DRAFT",
+          publishedAt: null,
+          version: payrollVersion,
+        },
+      ];
+    else if (payrollFixture && path.endsWith("/readiness")) {
+      data = {
+        status: "DRAFT",
+        ready: payrollFixture.salary > 0 && !payrollFixture.notReady,
+        missingSalaryCount: payrollFixture.salary > 0 ? 0 : 1,
+        missingSalaryEmployees:
+          payrollFixture.salary > 0
+            ? []
+            : [
+                {
+                  id: member.id,
+                  employeeNo: member.employeeNo,
+                  fullName: member.fullName,
+                },
+              ],
+        missingItemCount: 0,
+        inactiveItemCount: 0,
+        staleItemCount: payrollFixture.notReady ? 1 : 0,
+        invalidDeductionCount: 0,
+        itemCount: 1,
+        activeEmployeeCount: 1,
+      };
+      if (payrollFixture.readinessError) status = 503;
+    } else if (payrollFixture && path.endsWith("/items"))
+      data = [
+        {
+          id: "a0000000-0000-4000-8000-000000000002",
+          payrollRunId: "a0000000-0000-4000-8000-000000000001",
+          employeeId: member.id,
+          employeeNo: member.employeeNo,
+          fullName: member.fullName,
+          departmentName: member.department.name,
+          positionName: member.position.name,
+          baseSalaryIdr: payrollFixture.salary,
+          allowanceIdr: 0,
+          bonusIdr: 0,
+          deductionIdr: 0,
+          netSalaryIdr: payrollFixture.salary,
+          status: payrollPublished ? "PUBLISHED" : "DRAFT",
+          version: 1,
+        },
+      ];
+    else if (payrollFixture && path.endsWith("/sync")) {
+      expect(route.request().postDataJSON()).toEqual({
+        expectedVersion: payrollVersion,
+      });
+      payrollFixture.syncCount = (payrollFixture.syncCount ?? 0) + 1;
+      payrollFixture.notReady = false;
+      payrollVersion++;
+      data = {
+        id: "a0000000-0000-4000-8000-000000000001",
+        status: "DRAFT",
+        version: payrollVersion,
+      };
+    } else if (payrollFixture && path.endsWith("/publish")) {
+      payrollFixture.publishCount = (payrollFixture.publishCount ?? 0) + 1;
+      expect(route.request().postDataJSON()).toEqual({
+        expectedVersion: payrollVersion,
+      });
+      payrollPublished = true;
+      payrollVersion++;
+      data = {
+        id: "a0000000-0000-4000-8000-000000000001",
+        status: "PUBLISHED",
+        version: payrollVersion,
+      };
+    } else if (path === "/dashboard")
       data = {
         employeeCount: 2,
         activeEmployeeCount: 2,
@@ -197,6 +289,137 @@ test("numeric NIM login is submitted without HTML email validation", async ({
   await expect(
     page.getByRole("button", { name: "Notifikasi", exact: true }),
   ).toBeVisible();
+});
+
+test("live empty payroll does not fabricate zero-salary rows from the directory", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  await navigate(page, "Payroll");
+  await expect(
+    page.getByText("Belum ada item payroll periode ini.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Buat payroll", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Tinjau draft", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("live payroll preview uses snapshot base salary even though the directory lacks compensation", async ({
+  page,
+}) => {
+  await loginWithMocks(page, false, "nadia@example.test", { salary: 9000000 });
+  await navigate(page, "Payroll");
+  await expect(
+    page.getByRole("cell", { name: "Rp 9.000.000", exact: true }),
+  ).toHaveCount(2);
+  await expect(
+    page.getByRole("row").filter({ hasText: hr.fullName }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Edit komponen Dimas Saputra", exact: true })
+    .click();
+  await page.getByLabel("Tunjangan", { exact: true }).fill("500000");
+  await page.getByLabel("Bonus", { exact: true }).fill("250000");
+  await page.getByLabel("Potongan", { exact: true }).fill("100000");
+  await expect(
+    page.getByRole("dialog").locator(".payroll-total"),
+  ).toContainText("Rp 9.650.000");
+});
+
+test("zero salary is visibly unconfigured and cannot be published", async ({
+  page,
+}) => {
+  await loginWithMocks(page, false, "nadia@example.test", { salary: 0 });
+  await navigate(page, "Payroll");
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Payroll belum siap diterbitkan" }),
+  ).toContainText("1 karyawan belum memiliki gaji pokok");
+  await expect(
+    page.getByRole("cell", { name: "Belum diisi", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Terbitkan payroll", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Tinjau draft", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("Belum siap");
+  await expect(
+    page.getByRole("button", { name: "Cetak atau simpan PDF", exact: true }),
+  ).toBeDisabled();
+});
+
+test("stale draft requires explicit synchronization without automatically publishing", async ({
+  page,
+}) => {
+  const fixture: PayrollFixture = { salary: 9000000, notReady: true };
+  await loginWithMocks(page, false, "nadia@example.test", fixture);
+  await navigate(page, "Payroll");
+  await expect(
+    page.getByRole("button", { name: "Terbitkan payroll", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Sinkronkan draft", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Terbitkan payroll", exact: true }),
+  ).toBeEnabled();
+  expect(fixture.syncCount).toBe(1);
+  expect(fixture.publishCount ?? 0).toBe(0);
+  await expect(
+    page.getByRole("button", { name: "Tinjau draft", exact: true }),
+  ).toBeVisible();
+});
+
+test("payroll publication requires explicit confirmation and then locks the run", async ({
+  page,
+}) => {
+  const fixture: PayrollFixture = { salary: 9000000, publishCount: 0 };
+  await loginWithMocks(page, false, "nadia@example.test", fixture);
+  await navigate(page, "Payroll");
+  await page
+    .getByRole("button", { name: "Terbitkan payroll", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "tidak mentransfer uang",
+  );
+  await page.getByRole("button", { name: "Batal", exact: true }).click();
+  expect(fixture.publishCount).toBe(0);
+  await page
+    .getByRole("button", { name: "Terbitkan payroll", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Ya, terbitkan", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Payroll diproses", exact: true }),
+  ).toBeDisabled();
+  expect(fixture.publishCount).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Sinkronkan draft", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("readiness API failure fails closed without ghost payroll rows", async ({
+  page,
+}) => {
+  await loginWithMocks(page, false, "nadia@example.test", {
+    salary: 9000000,
+    readinessError: true,
+  });
+  await navigate(page, "Payroll");
+  await expect(
+    page.getByRole("button", { name: "Muat ulang payroll", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Buat payroll", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Tinjau draft", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("live account roles and unused masters come from API; no fake reviews", async ({

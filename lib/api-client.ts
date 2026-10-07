@@ -6,6 +6,7 @@ import type {
   MasterDto,
   PayrollItemDto,
   PayrollRunDto,
+  PayrollReadinessDto,
   ReviewDto,
 } from "./api-adapters";
 
@@ -247,6 +248,13 @@ export const hrApi = {
     }),
   payrollItems: (runId: string) =>
     list<PayrollItemDto>(`/payroll-runs/${runId}/items`),
+  payrollReadiness: (runId: string) =>
+    request<PayrollReadinessDto>(`/payroll-runs/${runId}/readiness`),
+  syncPayrollRun: (runId: string, expectedVersion: number) =>
+    request<PayrollRunDto>(`/payroll-runs/${runId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion }),
+    }),
   updatePayrollItem: (id: string, body: Record<string, unknown>) =>
     request<PayrollItemDto>(`/payroll-items/${id}`, {
       method: "PATCH",
