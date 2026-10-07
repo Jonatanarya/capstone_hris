@@ -145,10 +145,10 @@ export type DashboardDto = {
 };
 
 export const hrApi = {
-  login: (email: string, password: string) =>
+  login: (identifier: string, password: string) =>
     request<Me>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     }),
   logout: () =>
     request<{ signedOut: boolean }>("/auth/logout", { method: "POST" }),

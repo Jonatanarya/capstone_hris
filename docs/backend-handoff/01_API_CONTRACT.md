@@ -2,6 +2,8 @@
 
 Status: **usulan v1, belum diimplementasikan**. Baca [overview](README.md) terlebih dahulu. Semua URL di bawah adalah API aplikasi Next.js `/api/v1`, bukan URL REST bawaan Supabase. Transport internal SDK/RPC disepakati oleh kedua PIC.
 
+Pembaruan 7 Oktober 2026: login yang diimplementasikan menerima `identifier` (NIM/NPM/nomor induk atau email) + `password`. Field `email` lama tetap diterima untuk kompatibilitas; tidak boleh dikirim bersamaan dengan `identifier`. Lihat [login NIM demo](../LOGIN_NIM_DEMO.md). Bagian lain dokumen ini tetap merupakan baseline rancangan; status implementasi ada di `06_IMPLEMENTATION.md`.
+
 ## 1. Konvensi wajib
 
 - Payload/DTO memakai `camelCase`; kolom PostgreSQL `snake_case`, dikonversi pada Route Handler/adapter.
@@ -85,7 +87,7 @@ Kode akses: **HR** Admin HR aktif, **M** Manager aktif, **E** Karyawan aktif, **
 
 | Method/path setelah `/api/v1`                      | Pemohon                          | Input utama                                           | Hasil/aturan                                                                             |
 | -------------------------------------------------- | -------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| POST `/auth/login`                                 | Belum login                      | email, password                                       | 200 session cookie + Me; tidak menerima role                                             |
+| POST `/auth/login`                                 | Belum login                      | identifier, password (email legacy didukung)          | 200 session cookie + Me; tidak menerima role                                             |
 | POST `/auth/logout`                                | Semua                            | kosong                                                | 200 `{ signedOut: true }`, hapus session browser                                         |
 | POST `/auth/password-reset`                        | Belum login                      | email                                                 | 200 pesan generik, rate limit; email recovery Supabase                                   |
 | GET `/auth/callback`                               | Flow Auth                        | code/state sesuai SDK                                 | Redirect allowlisted; endpoint ini tidak memakai envelope JSON                           |

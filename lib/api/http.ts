@@ -101,7 +101,7 @@ export const api = {
     new ApiError(400, "INVALID_JSON", message),
   unauthenticated: (message = "Sesi tidak ditemukan") =>
     new ApiError(401, "UNAUTHENTICATED", message),
-  invalidCredentials: (message = "Email atau kata sandi salah") =>
+  invalidCredentials: (message = "NIM/NPM, email, atau kata sandi salah") =>
     new ApiError(401, "INVALID_CREDENTIALS", message),
   forbidden: (message = "Aksi tidak diizinkan") =>
     new ApiError(403, "FORBIDDEN", message),

@@ -40,14 +40,21 @@ async function navigate(page: Page, label: string) {
     .getByText(label, { exact: true })
     .click();
 }
-async function loginWithMocks(page: Page, brokenDetail = false) {
+async function loginWithMocks(
+  page: Page,
+  brokenDetail = false,
+  identifier = "nadia@example.test",
+) {
   let signed = false;
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace("/api/v1", "");
     let data: unknown = [];
     let status = 200;
-    if (path === "/auth/login") signed = true;
+    if (path === "/auth/login") {
+      expect(route.request().postDataJSON()).toMatchObject({ identifier });
+      signed = true;
+    }
     if (path === "/me" || path === "/auth/login") {
       data = {
         userId: "hr-user",
@@ -140,7 +147,7 @@ async function loginWithMocks(page: Page, brokenDetail = false) {
     });
   });
   await page.goto("/");
-  await page.getByLabel("Email", { exact: true }).fill("nadia@example.test");
+  await page.getByLabel("NIM / NPM", { exact: true }).fill(identifier);
   await page
     .getByLabel("Password", { exact: true })
     .fill("local-mocked-not-a-real-password");
@@ -183,6 +190,15 @@ test("live edit uses complete detail, never zero salary from summary", async ({
     ),
   ).toBe(true);
 });
+test("numeric NIM login is submitted without HTML email validation", async ({
+  page,
+}) => {
+  await loginWithMocks(page, false, "2300000001");
+  await expect(
+    page.getByRole("button", { name: "Notifikasi", exact: true }),
+  ).toBeVisible();
+});
+
 test("live account roles and unused masters come from API; no fake reviews", async ({
   page,
 }) => {

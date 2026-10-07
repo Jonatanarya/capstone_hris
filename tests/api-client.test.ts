@@ -43,7 +43,7 @@ describe("hrApi — pembentukan request", () => {
       "application/json",
     );
     expect(JSON.parse(init.body as string)).toEqual({
-      email: "budi@example.co.id",
+      identifier: "budi@example.co.id",
       password: "rahasia",
     });
   });

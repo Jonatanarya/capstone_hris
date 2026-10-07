@@ -1663,10 +1663,12 @@ export default function HrisApp({ today }: { today: string }) {
           <p>Kelola tim dan aktivitas kerja dalam satu ruang.</p>
           <form onSubmit={signIn}>
             <label>
-              Email
+              NIM / NPM
               <Input
-                type="email"
+                type="text"
                 required
+                maxLength={254}
+                placeholder="Masukkan NIM / NPM"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="username"
@@ -1704,7 +1706,9 @@ export default function HrisApp({ today }: { today: string }) {
               disabled={authBusy}
               onClick={async () => {
                 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-                  toast.error("Isi email terlebih dahulu.");
+                  toast.error(
+                    "Akun NIM/NPM demo: hubungi Admin HR untuk reset kata sandi. Pemulihan email hanya untuk akun dengan alamat email aktif.",
+                  );
                   return;
                 }
                 setAuthBusy(true);
@@ -1727,7 +1731,7 @@ export default function HrisApp({ today }: { today: string }) {
           )}
           <small>
             {live
-              ? "Mode terintegrasi · autentikasi Supabase"
+              ? "Masuk dengan NIM/NPM · akun lama tetap bisa memakai email"
               : "Mode demo frontend · akun dan data contoh"}
           </small>
         </div>
