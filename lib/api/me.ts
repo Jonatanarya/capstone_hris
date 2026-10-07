@@ -3,7 +3,9 @@ import { api } from "./http";
 import { employeeProfile, type ContactRow, type EmployeeRow } from "./dto";
 import type { Actor } from "./actor";
 
-type MeRow = EmployeeRow & { employee_contacts: ContactRow | ContactRow[] | null };
+type MeRow = EmployeeRow & {
+  employee_contacts: ContactRow | ContactRow[] | null;
+};
 
 /** Bangun DTO Me (userId, role, accountStatus, employee profile sendiri). */
 export async function buildMe(supabase: SupabaseClient, actor: Actor) {

@@ -12,6 +12,11 @@ export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
 
   return createServerClient(url, publishableKey, {
+    cookieOptions: {
+      httpOnly: true,
+      secure: process.env.VERCEL === "1",
+      sameSite: "lax",
+    },
     cookies: {
       getAll() {
         return cookieStore.getAll();

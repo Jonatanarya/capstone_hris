@@ -83,11 +83,18 @@ import {
   payrollError,
 } from "@/lib/hris";
 import { isLiveMode } from "@/lib/api-mode";
-import { hrApi, ApiClientError, type Me } from "@/lib/api-client";
+import {
+  hrApi,
+  ApiClientError,
+  type Me,
+  type DashboardDto,
+} from "@/lib/api-client";
 import {
   personFromMe,
   personFromDto,
   uiRole,
+  backendRole,
+  labelFromPeriod,
   attendanceFromDto,
   leaveFromDto,
   leaveTypeCode,
@@ -220,7 +227,6 @@ type AttendanceRecord = {
   checkIn: string;
   checkOut: string;
 };
-const periods = ["Oktober 2026", "September 2026", "Agustus 2026"];
 const seedAttendance = (today: string): AttendanceRecord[] => [
   ...seed
     .filter((p) => p.status === "Aktif" && p.id !== "2")
@@ -331,8 +337,8 @@ export default function HrisApp({ today }: { today: string }) {
   const live = isLiveMode();
   const [role, setRole] = useState<Role>("Admin HR"),
     [view, setView] = useState("dashboard"),
-    [people, setPeople] = useState(seed),
-    [leaves, setLeaves] = useState(seedLeaves),
+    [people, setPeople] = useState<Person[]>(live ? [] : seed),
+    [leaves, setLeaves] = useState(live ? [] : seedLeaves),
     [search, setSearch] = useState(""),
     [dept, setDept] = useState("Semua departemen"),
     [filter, setFilter] = useState("Semua"),
@@ -351,9 +357,11 @@ export default function HrisApp({ today }: { today: string }) {
     [email, setEmail] = useState(live ? "" : "admin@peoplespace.demo"),
     [password, setPassword] = useState(live ? "" : "demo123"),
     [authBusy, setAuthBusy] = useState(false),
-    [records, setRecords] = useState(() => seedAttendance(today)),
+    [records, setRecords] = useState(() => (live ? [] : seedAttendance(today))),
     [attendanceDate, setAttendanceDate] = useState(today),
-    [period, setPeriod] = useState("September 2026"),
+    [period, setPeriod] = useState(
+      live ? labelFromPeriod(today.slice(0, 7)) : "September 2026",
+    ),
     [processedPeriods, setProcessedPeriods] = useState<string[]>([]),
     [allowance, setAllowance] = useState(500000),
     [bonus, setBonus] = useState(250000),
@@ -367,7 +375,13 @@ export default function HrisApp({ today }: { today: string }) {
     [reviews, setReviews] = useState<
       Record<
         string,
-        { score: number; notes: string; assessedAt: string; assessor: string; version?: number }
+        {
+          score: number;
+          notes: string;
+          assessedAt: string;
+          assessor: string;
+          version?: number;
+        }
       >
     >({}),
     [extraDepts, setExtraDepts] = useState<string[]>([]),
@@ -376,11 +390,32 @@ export default function HrisApp({ today }: { today: string }) {
     [masterPositions, setMasterPositions] = useState<MasterDto[]>([]),
     [accounts, setAccounts] = useState<AccountDto[]>([]),
     [employeeMeta, setEmployeeMeta] = useState<
-      Record<string, { departmentId: string; positionId: string; version: number; contactVersion: number }>
+      Record<
+        string,
+        {
+          departmentId: string;
+          positionId: string;
+          version: number;
+          contactVersion: number;
+        }
+      >
     >({}),
     [payItems, setPayItems] = useState<PayrollItemDto[]>([]),
     [payRun, setPayRun] = useState<PayrollRunDto | null>(null),
     [payBusy, setPayBusy] = useState(false);
+  const [accountBusy, setAccountBusy] = useState<string | null>(null);
+  const [employeeBusy, setEmployeeBusy] = useState(false);
+  const [inviteEmployeeId, setInviteEmployeeId] = useState("");
+  const [inviteKeys, setInviteKeys] = useState<Record<string, string>>({});
+  const [dashboard, setDashboard] = useState<DashboardDto | null>(null);
+  const [liveBalance, setLiveBalance] = useState<number | null>(null);
+  const periods = live
+    ? Array.from({ length: 12 }, (_, offset) => {
+        const date = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+        date.setUTCMonth(date.getUTCMonth() - offset);
+        return labelFromPeriod(date.toISOString().slice(0, 7));
+      })
+    : ["Oktober 2026", "September 2026", "Agustus 2026"];
   // Identitas demo per peran (id seed string). Pada mode terintegrasi, identitas
   // berasal dari sesi Supabase, bukan dari pemilih peran.
   const demoIds: Record<Role, string> = {
@@ -394,7 +429,16 @@ export default function HrisApp({ today }: { today: string }) {
     [session],
   );
   const currentUser: Person = live
-    ? (sessionPerson ?? people[0])
+    ? (sessionPerson ?? {
+        ...seed[0],
+        id: "",
+        name: "",
+        email: "",
+        dept: "",
+        phone: "",
+        address: "",
+        salary: 0,
+      })
     : (people.find((p) => p.id === demoIds[role]) ?? people[0]);
   const me = live
     ? currentUser
@@ -435,7 +479,9 @@ export default function HrisApp({ today }: { today: string }) {
     ),
     pending = visibleLeaves.filter((l) => l.status === "Menunggu");
   const active = team.filter((p) => p.status === "Aktif");
-  const remaining = availableLeave(leaves, currentUser.id, today.slice(0, 4));
+  const remaining = live
+    ? (liveBalance ?? "—")
+    : availableLeave(leaves, currentUser.id, today.slice(0, 4));
   const mine = records.find(
     (r) => r.employee === currentUser.id && r.date === today,
   );
@@ -449,7 +495,7 @@ export default function HrisApp({ today }: { today: string }) {
     : processedPeriods.includes(period);
   const reviewFor = (p: Person) =>
     reviews[p.id + period] ??
-    (period === "September 2026"
+    (!live && period === "September 2026"
       ? {
           score: p.score,
           notes: "Penilaian contoh September",
@@ -512,14 +558,29 @@ export default function HrisApp({ today }: { today: string }) {
     }
   };
   const signOut = async () => {
-    setSigned(false);
-    setSession(null);
-    setPassword("");
-    if (!live) return;
     try {
-      await hrApi.logout();
+      if (live) await hrApi.logout();
+      setSigned(false);
+      setSession(null);
+      setPassword("");
+      setDialog(null);
+      if (live) {
+        setPeople([]);
+        setLeaves([]);
+        setRecords([]);
+        setAccounts([]);
+        setPayRun(null);
+        setPayItems([]);
+        setReviews({});
+        setEmployeeMeta({});
+        setDashboard(null);
+        setLiveBalance(null);
+        window.location.reload();
+      }
     } catch {
-      // Sesi lokal sudah dibersihkan; kegagalan logout server tidak fatal.
+      toast.error(
+        "Logout gagal. Coba lagi agar sesi server benar-benar berakhir.",
+      );
     }
   };
   // --- Aksi mode terintegrasi (memanggil `/api/v1`) ---
@@ -550,23 +611,20 @@ export default function HrisApp({ today }: { today: string }) {
       }
     }
   }, []);
-  const refreshLeaves = useCallback(
-    async (year: number) => {
-      try {
-        const rows = await hrApi.leaveRequests({ year, pageSize: 100 });
-        const nameFor = (userId: string | null) => {
-          if (!userId) return undefined;
-          return accounts.find((a) => a.userId === userId)?.fullName ?? undefined;
-        };
-        setLeaves(rows.map((l) => leaveFromDto(l, nameFor)));
-      } catch (error) {
-        if (error instanceof ApiClientError && error.status >= 500) {
-          toast.error(error.message);
-        }
+  const refreshLeaves = useCallback(async (year: number) => {
+    try {
+      const rows = await hrApi.leaveRequests({ year, pageSize: 100 });
+      const nameFor = (userId: string | null) => {
+        if (!userId) return undefined;
+        return "Manager";
+      };
+      setLeaves(rows.map((l) => leaveFromDto(l, nameFor)));
+    } catch (error) {
+      if (error instanceof ApiClientError && error.status >= 500) {
+        toast.error(error.message);
       }
-    },
-    [accounts],
-  );
+    }
+  }, []);
   const toggleAttendance = async (arrive: boolean) => {
     try {
       if (arrive) await hrApi.checkIn();
@@ -610,13 +668,6 @@ export default function HrisApp({ today }: { today: string }) {
       }
       const items = await hrApi.payrollItems(run.id);
       setPayItems(items);
-      const byEmployee = Object.fromEntries(items.map((i) => [i.employeeId, i]));
-      setPeople((ps) =>
-        ps.map((p) => {
-          const item = byEmployee[p.id];
-          return item ? { ...p, salary: item.baseSalaryIdr } : p;
-        }),
-      );
     } catch (error) {
       if (error instanceof ApiClientError && error.status >= 500) {
         toast.error(error.message);
@@ -633,7 +684,9 @@ export default function HrisApp({ today }: { today: string }) {
       toast.success("Payroll " + period + " dibuat");
     } catch (error) {
       toast.error(
-        error instanceof ApiClientError ? error.message : "Payroll gagal dibuat",
+        error instanceof ApiClientError
+          ? error.message
+          : "Payroll gagal dibuat",
       );
     } finally {
       setPayBusy(false);
@@ -662,7 +715,9 @@ export default function HrisApp({ today }: { today: string }) {
     try {
       const rows = await hrApi.performanceReviews(apiPeriod);
       setReviews((rs) => {
-        const next = { ...rs };
+        const next = Object.fromEntries(
+          Object.entries(rs).filter(([key]) => !key.endsWith(period)),
+        );
         for (const r of rows) {
           next[r.employeeId + period] = {
             score: r.score,
@@ -716,8 +771,16 @@ export default function HrisApp({ today }: { today: string }) {
     const salary = Number(f.get("salary"));
     const status = String(f.get("status"));
     const departmentId = master.find((d) => d.name === deptName)?.id ?? "";
-    const positionId = masterPositions.find((p) => p.name === posName)?.id ?? "";
-    if (!name || !employeeNo || !phone || !address || !departmentId || !positionId) {
+    const positionId =
+      masterPositions.find((p) => p.name === posName)?.id ?? "";
+    if (
+      !name ||
+      !employeeNo ||
+      !phone ||
+      !address ||
+      !departmentId ||
+      !positionId
+    ) {
       toast.error("Lengkapi data karyawan termasuk departemen dan jabatan");
       return;
     }
@@ -746,6 +809,7 @@ export default function HrisApp({ today }: { today: string }) {
           phone,
           address,
           baseSalaryIdr: salary,
+          ...(email !== selected.email ? { workEmail: email } : {}),
           expectedVersion: employeeMeta[selected.id]?.version ?? 1,
         });
       }
@@ -859,7 +923,8 @@ export default function HrisApp({ today }: { today: string }) {
       if (isDept) {
         if (renaming) {
           const target = master.find((d) => d.name === masterName);
-          if (target) await hrApi.renameDepartment(target.id, name, target.version);
+          if (target)
+            await hrApi.renameDepartment(target.id, name, target.version);
         } else {
           await hrApi.createDepartment(name);
         }
@@ -882,6 +947,7 @@ export default function HrisApp({ today }: { today: string }) {
     }
   };
   const submitLive = (f: FormData) => {
+    if (dialog === "invite") return inviteAccountLive(f);
     if (dialog === "employee") return saveEmployeeLive(f);
     if (dialog === "leave") return createLeaveLive(f);
     if (dialog === "review") return saveReviewLive(f);
@@ -889,9 +955,12 @@ export default function HrisApp({ today }: { today: string }) {
     if (dialog === "reject") return rejectLeaveLive(f);
     if (dialog === "profile") return saveContactLive(f);
     if (
-      ["department", "position", "rename-department", "rename-position"].includes(
-        dialog ?? "",
-      )
+      [
+        "department",
+        "position",
+        "rename-department",
+        "rename-position",
+      ].includes(dialog ?? "")
     )
       return saveMasterLive(f);
     return Promise.resolve();
@@ -917,12 +986,12 @@ export default function HrisApp({ today }: { today: string }) {
             departmentId: row.department?.id ?? current?.departmentId ?? "",
             positionId: row.position?.id ?? current?.positionId ?? "",
             version: row.version,
-            contactVersion: row.contact?.version ?? current?.contactVersion ?? 0,
+            contactVersion:
+              row.contact?.version ?? current?.contactVersion ?? 0,
           };
         }
         return next;
       });
-      setSelected((s) => list.find((p) => p.id === s.id) ?? list[0] ?? s);
     } catch (error) {
       if (error instanceof ApiClientError && error.status >= 500) {
         toast.error(error.message);
@@ -941,13 +1010,80 @@ export default function HrisApp({ today }: { today: string }) {
       }
     }
   }, [role]);
+  const changeAccount = async (
+    account: AccountDto,
+    changes: Record<string, unknown>,
+  ) => {
+    if (accountBusy || account.userId === session?.userId) return;
+    setAccountBusy(account.userId);
+    try {
+      await hrApi.updateAccount(account.userId, {
+        ...changes,
+        expectedVersion: account.version,
+      });
+      await loadAccounts();
+      toast.success("Akun diperbarui");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Akun gagal diperbarui",
+      );
+      await loadAccounts();
+    } finally {
+      setAccountBusy(null);
+    }
+  };
+  const inviteAccountLive = async (form: FormData) => {
+    if (accountBusy) return;
+    const role = String(form.get("role"));
+    const payloadKey = inviteEmployeeId + ":" + role;
+    const key = inviteKeys[payloadKey] ?? crypto.randomUUID();
+    setInviteKeys((keys) => ({ ...keys, [payloadKey]: key }));
+    setAccountBusy(inviteEmployeeId);
+    try {
+      await hrApi.inviteAccount(inviteEmployeeId, role, key);
+      await loadAccounts();
+      setDialog(null);
+      toast.success("Undangan dikirim. Akun menunggu aktivasi oleh pemilik.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Undangan gagal diproses",
+      );
+    } finally {
+      setAccountBusy(null);
+    }
+  };
+  const loadDashboard = useCallback(async () => {
+    try {
+      setDashboard(await hrApi.dashboard(periodFromLabel(period)));
+    } catch (error) {
+      setDashboard(null);
+      toast.error(
+        error instanceof Error ? error.message : "Dashboard gagal dimuat",
+      );
+    }
+  }, [period]);
+  const loadBalance = useCallback(async () => {
+    try {
+      setLiveBalance(
+        (await hrApi.leaveBalance(Number(today.slice(0, 4)))).availableDays,
+      );
+    } catch (error) {
+      setLiveBalance(null);
+      toast.error(
+        error instanceof Error ? error.message : "Saldo cuti gagal dimuat",
+      );
+    }
+  }, [today]);
   // Efek pemuatan data: menyinkronkan state React dengan sumber eksternal
   // (`/api/v1`). Pola fetch-async → setState ini sengaja dikecualikan dari
   // aturan `set-state-in-effect` karena memang men-subscribe ke data server.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (live && !signed) void loadMe();
-  }, [live, signed, loadMe]);
+    if (live) void loadMe();
+    const expire = () => window.location.reload();
+    window.addEventListener("hris-session-expired", expire);
+    return () => window.removeEventListener("hris-session-expired", expire);
+  }, [live, loadMe]);
   useEffect(() => {
     if (!live || !signed) return;
     void loadDirectory();
@@ -955,6 +1091,11 @@ export default function HrisApp({ today }: { today: string }) {
     void refreshLeaves(Number(today.slice(0, 4)));
     void refreshMaster();
     if (role === "Admin HR") void loadAccounts();
+    if (role === "Karyawan") void loadBalance();
+    if (view === "dashboard") {
+      void loadDashboard();
+      void refreshAttendance(today);
+    }
     if (["payroll", "dashboard"].includes(view)) void loadPayroll();
     if (view === "performance") void refreshReviews();
   }, [
@@ -970,6 +1111,8 @@ export default function HrisApp({ today }: { today: string }) {
     refreshLeaves,
     refreshMaster,
     loadAccounts,
+    loadDashboard,
+    loadBalance,
     loadPayroll,
     refreshReviews,
   ]);
@@ -1068,7 +1211,7 @@ export default function HrisApp({ today }: { today: string }) {
       toast.success("Absen keluar tercatat pukul " + t);
     }
   };
-  const download = (kind: string) => {
+  const download = async (kind: string) => {
     if (kind === "payroll" && role === "Karyawan" && !processed) {
       toast.error("Payroll periode ini belum diterbitkan");
       return;
@@ -1087,8 +1230,34 @@ export default function HrisApp({ today }: { today: string }) {
       if (["payroll", "performance"].includes(target)) {
         params.period = periodFromLabel(period);
       }
-      window.location.assign(hrApi.reportUrl(target, params));
-      toast.success("Laporan sedang diunduh");
+      if (target === "employees") {
+        params.q = search;
+        const department = master.find((d) => d.name === dept);
+        if (department) params.departmentId = department.id;
+        if (filter === "Aktif" || filter === "Nonaktif")
+          params.employmentStatus = filter === "Aktif" ? "ACTIVE" : "INACTIVE";
+      }
+      try {
+        const response = await fetch(hrApi.reportUrl(target, params), {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as {
+            error?: { message?: string };
+          } | null;
+          throw new Error(body?.error?.message ?? "Laporan gagal diunduh");
+        }
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `PeopleSpace-${target}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.success("Laporan berhasil diunduh");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Unduhan gagal");
+      }
       return;
     }
     let rows: unknown[][] = [];
@@ -1157,7 +1326,44 @@ export default function HrisApp({ today }: { today: string }) {
     URL.revokeObjectURL(u);
     toast.success("Laporan berhasil diunduh");
   };
+  const showPerson = async (p: Person, mode: "employee" | "detail") => {
+    if (!live) {
+      setSelected(p);
+      setDialog(mode);
+      return;
+    }
+    if (employeeBusy) return;
+    setEmployeeBusy(true);
+    try {
+      const row = await hrApi.employee(p.id);
+      if (mode === "employee" && (!row.contact || !row.compensation))
+        throw new Error(
+          "Detail kontak/gaji belum tersedia. Form tidak dibuka agar data tidak tertimpa.",
+        );
+      setSelected(personFromDto(row));
+      setEmployeeMeta((values) => ({
+        ...values,
+        [row.id]: {
+          departmentId: row.department?.id ?? "",
+          positionId: row.position?.id ?? "",
+          version: row.version,
+          contactVersion: row.contact?.version ?? 0,
+        },
+      }));
+      setDialog(mode);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Detail gagal dimuat",
+      );
+    } finally {
+      setEmployeeBusy(false);
+    }
+  };
   const edit = (p?: Person) => {
+    if (p && live) {
+      void showPerson(p, "employee");
+      return;
+    }
     setSelected(
       p ?? {
         id: "new-" + Date.now(),
@@ -1492,6 +1698,33 @@ export default function HrisApp({ today }: { today: string }) {
               {authBusy ? "Memproses…" : "Masuk ke workspace"}
             </Button>
           </form>
+          {live && (
+            <Button
+              variant="ghost"
+              disabled={authBusy}
+              onClick={async () => {
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+                  toast.error("Isi email terlebih dahulu.");
+                  return;
+                }
+                setAuthBusy(true);
+                try {
+                  await hrApi.resetPassword(email.trim());
+                  toast.success(
+                    "Jika email terdaftar, tautan pemulihan akan dikirim. Periksa inbox/spam.",
+                  );
+                } catch (error) {
+                  toast.error(
+                    error instanceof Error ? error.message : "Pemulihan gagal",
+                  );
+                } finally {
+                  setAuthBusy(false);
+                }
+              }}
+            >
+              Lupa kata sandi?
+            </Button>
+          )}
           <small>
             {live
               ? "Mode terintegrasi · autentikasi Supabase"
@@ -1567,7 +1800,9 @@ export default function HrisApp({ today }: { today: string }) {
             <Sparkles size={17} />
             <div>
               <strong>Ruang untuk tim yang lebih baik</strong>
-              <small>Demo frontend · data contoh</small>
+              <small>
+                {live ? "Terhubung ke Supabase" : "Demo frontend · data contoh"}
+              </small>
             </div>
           </div>
           <Button
@@ -1722,7 +1957,12 @@ export default function HrisApp({ today }: { today: string }) {
                 {[
                   {
                     label: role === "Karyawan" ? "Sisa cuti" : "Total karyawan",
-                    value: role === "Karyawan" ? remaining : team.length,
+                    value:
+                      role === "Karyawan"
+                        ? remaining
+                        : live
+                          ? (dashboard?.employeeCount ?? "—")
+                          : team.length,
                     detail:
                       role === "Karyawan"
                         ? "hari tersedia"
@@ -1738,7 +1978,9 @@ export default function HrisApp({ today }: { today: string }) {
                     value:
                       role === "Karyawan"
                         ? checkIn || "Belum absen"
-                        : present.length,
+                        : live
+                          ? (dashboard?.presentCount ?? "—")
+                          : present.length,
                     detail:
                       role === "Karyawan"
                         ? "Jadwal 08.00 – 17.00"
@@ -1748,17 +1990,29 @@ export default function HrisApp({ today }: { today: string }) {
                   },
                   {
                     label: "Pengajuan cuti",
-                    value: pending.length,
+                    value: live
+                      ? (dashboard?.pendingLeaveCount ?? "—")
+                      : pending.length,
                     detail: "menunggu persetujuan",
                     icon: CalendarDays,
                     color: "orange",
                   },
                   {
                     label: "Rata-rata kinerja",
-                    value: Math.round(
-                      team.reduce((a, p) => a + (reviewFor(p)?.score ?? 0), 0) /
-                        Math.max(1, team.filter((p) => reviewFor(p)).length),
-                    ),
+                    value: live
+                      ? dashboard?.averageReviewScore == null
+                        ? "—"
+                        : Math.round(dashboard.averageReviewScore)
+                      : Math.round(
+                          team.reduce(
+                            (a, p) => a + (reviewFor(p)?.score ?? 0),
+                            0,
+                          ) /
+                            Math.max(
+                              1,
+                              team.filter((p) => reviewFor(p)).length,
+                            ),
+                        ),
                     detail: period + " · hanya yang sudah dinilai",
                     icon: ChartNoAxesCombined,
                     color: "purple",
@@ -2078,8 +2332,7 @@ export default function HrisApp({ today }: { today: string }) {
                           size="icon"
                           aria-label={"Detail " + p.name}
                           onClick={() => {
-                            setSelected(p);
-                            setDialog("detail");
+                            void showPerson(p, "detail");
                           }}
                         >
                           <MoreHorizontal size={18} />
@@ -2361,9 +2614,7 @@ export default function HrisApp({ today }: { today: string }) {
                             <strong>{p.name}</strong>
                             <small className="cell-small">{period}</small>
                           </TableCell>
-                          <TableCell>
-                            {money(payFor(p).salary)}
-                          </TableCell>
+                          <TableCell>{money(payFor(p).salary)}</TableCell>
                           <TableCell>
                             {money(payFor(p).allowance + payFor(p).bonus)}
                           </TableCell>
@@ -2489,7 +2740,7 @@ export default function HrisApp({ today }: { today: string }) {
                         : ["payroll", "kinerja"].includes(k)
                           ? period
                           : "Semua data dalam lingkup akses"}{" "}
-                      · CSV data contoh
+                      · CSV {live ? "data server sesuai akses" : "data contoh"}
                     </p>
                     <Button variant="outline" onClick={() => download(k)}>
                       <Download size={16} />
@@ -2518,8 +2769,12 @@ export default function HrisApp({ today }: { today: string }) {
                 {[
                   ...new Set(
                     view === "departments"
-                      ? [...people.map((p) => p.dept), ...extraDepts]
-                      : [...people.map((p) => p.position), ...extraPositions],
+                      ? live
+                        ? master.map((d) => d.name)
+                        : [...people.map((p) => p.dept), ...extraDepts]
+                      : live
+                        ? masterPositions.map((p) => p.name)
+                        : [...people.map((p) => p.position), ...extraPositions],
                   ),
                 ].map((s) => (
                   <Panel className="report-card" key={s}>
@@ -2564,58 +2819,130 @@ export default function HrisApp({ today }: { today: string }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {people.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell>{p.name}</TableCell>
-                      <TableCell>{p.email}</TableCell>
-                      <TableCell>
-                        {demoLock.includes(p.id) ? (
-                          (accountRoles[p.id] ?? "Karyawan")
-                        ) : (
-                          <select
-                            aria-label={"Peran akun " + p.name}
-                            value={accountRoles[p.id] ?? "Karyawan"}
-                            onChange={(e) =>
-                              setAccountRoles((rs) => ({
-                                ...rs,
-                                [p.id]: e.target.value as Role,
-                              }))
-                            }
-                          >
-                            <option>Karyawan</option>
-                            <option>Manager</option>
-                            <option>Admin HR</option>
-                          </select>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {demoLock.includes(p.id) ? (
-                          <Status value="Aktif" />
-                        ) : (
-                          <select
-                            aria-label={"Status akun " + p.name}
-                            value={accountStatus[p.id] ?? p.status}
-                            onChange={(e) =>
-                              setAccountStatus((ss) => ({
-                                ...ss,
-                                [p.id]: e.target.value,
-                              }))
-                            }
-                          >
-                            <option>Aktif</option>
-                            <option>Nonaktif</option>
-                          </select>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {live
+                    ? accounts.map((account) => (
+                        <TableRow key={account.userId}>
+                          <TableCell>{account.fullName}</TableCell>
+                          <TableCell>{account.workEmail}</TableCell>
+                          <TableCell>
+                            <select
+                              aria-label={"Peran akun " + account.fullName}
+                              value={uiRole(account.role)}
+                              disabled={
+                                accountBusy !== null ||
+                                account.userId === session?.userId
+                              }
+                              onChange={(event) =>
+                                void changeAccount(account, {
+                                  role: backendRole(event.target.value as Role),
+                                })
+                              }
+                            >
+                              <option>Karyawan</option>
+                              <option>Manager</option>
+                              <option>Admin HR</option>
+                            </select>
+                          </TableCell>
+                          <TableCell>
+                            <select
+                              aria-label={"Status akun " + account.fullName}
+                              value={account.accountStatus}
+                              disabled={
+                                accountBusy !== null ||
+                                account.userId === session?.userId ||
+                                account.accountStatus === "INVITED"
+                              }
+                              onChange={(event) =>
+                                void changeAccount(account, {
+                                  accountStatus: event.target.value,
+                                })
+                              }
+                            >
+                              {account.accountStatus === "INVITED" && (
+                                <option value="INVITED">
+                                  Menunggu aktivasi
+                                </option>
+                              )}
+                              <option value="ACTIVE">Aktif</option>
+                              <option value="DISABLED">Nonaktif</option>
+                            </select>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    : people.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell>{p.name}</TableCell>
+                          <TableCell>{p.email}</TableCell>
+                          <TableCell>
+                            {demoLock.includes(p.id) ? (
+                              (accountRoles[p.id] ?? "Karyawan")
+                            ) : (
+                              <select
+                                aria-label={"Peran akun " + p.name}
+                                value={accountRoles[p.id] ?? "Karyawan"}
+                                onChange={(e) =>
+                                  setAccountRoles((rs) => ({
+                                    ...rs,
+                                    [p.id]: e.target.value as Role,
+                                  }))
+                                }
+                              >
+                                <option>Karyawan</option>
+                                <option>Manager</option>
+                                <option>Admin HR</option>
+                              </select>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {demoLock.includes(p.id) ? (
+                              <Status value="Aktif" />
+                            ) : (
+                              <select
+                                aria-label={"Status akun " + p.name}
+                                value={accountStatus[p.id] ?? p.status}
+                                onChange={(e) =>
+                                  setAccountStatus((ss) => ({
+                                    ...ss,
+                                    [p.id]: e.target.value,
+                                  }))
+                                }
+                              >
+                                <option>Aktif</option>
+                                <option>Nonaktif</option>
+                              </select>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
                 </TableBody>
               </Table>
+              {live && (
+                <div className="report-grid" style={{ padding: 16 }}>
+                  {people
+                    .filter(
+                      (p) =>
+                        p.status === "Aktif" &&
+                        !accounts.some((a) => a.employeeId === p.id),
+                    )
+                    .map((p) => (
+                      <Button
+                        key={p.id}
+                        variant="outline"
+                        disabled={accountBusy !== null}
+                        onClick={() => {
+                          setInviteEmployeeId(p.id);
+                          setDialog("invite");
+                        }}
+                      >
+                        Undang {p.name}
+                      </Button>
+                    ))}
+                </div>
+              )}
               <p className="table-meta">
-                Simulasi pengaturan akun; tiga identitas penguji dikunci.
-                Perubahan peran/status ini bukan pemberian akses nyata.
-                Pembuatan akun, undangan dan penonaktifan login memerlukan
-                backend.
+                {live
+                  ? `${accounts.length} akun terhubung. Perubahan memakai versi data terbaru. Akun sendiri tidak dapat dinonaktifkan; undangan diaktifkan oleh pemilik setelah menetapkan kata sandi.`
+                  : "Simulasi pengaturan akun; tiga identitas penguji dikunci. Perubahan peran/status ini bukan pemberian akses nyata."}
               </p>
             </Panel>
           )}
@@ -2689,12 +3016,15 @@ export default function HrisApp({ today }: { today: string }) {
                     profile: "Edit kontak saya",
                     "rename-department": "Ubah nama departemen",
                     "rename-position": "Ubah nama jabatan",
+                    invite: "Undang akun pengguna",
                   } as Record<string, string>
                 )[dialog ?? "help"]
               }
             </DialogTitle>
             <DialogDescription>
-              Workspace demo · data contoh selama sesi ini.
+              {live
+                ? "Workspace terhubung · perubahan disimpan ke server."
+                : "Workspace demo · data contoh selama sesi ini."}
             </DialogDescription>
           </DialogHeader>
           {[
@@ -2708,14 +3038,38 @@ export default function HrisApp({ today }: { today: string }) {
             "profile",
             "rename-department",
             "rename-position",
+            "invite",
           ].includes(dialog ?? "") && (
             <form className="form-grid" onSubmit={submit}>
+              {dialog === "invite" && (
+                <>
+                  <p className="full">
+                    Undangan akan dikirim ke{" "}
+                    {people.find((p) => p.id === inviteEmployeeId)?.email}.
+                    Penerima harus menetapkan kata sandi sebelum akun aktif.
+                  </p>
+                  <label className="full">
+                    Peran
+                    <select name="role" defaultValue="EMPLOYEE" required>
+                      <option value="EMPLOYEE">Karyawan</option>
+                      <option value="MANAGER">Manager</option>
+                      <option value="ADMIN_HR">Admin HR</option>
+                    </select>
+                  </label>
+                  <p className="full">
+                    Jika proses gagal sebagian, gunakan percobaan yang sama dan
+                    minta HR melakukan rekonsiliasi. Jangan mengirim undangan
+                    baru.
+                  </p>
+                </>
+              )}
               {dialog === "employee" && (
                 <>
                   <label>
                     Nomor induk
                     <Input
                       name="employeeNo"
+                      readOnly={live && !selected.id.startsWith("new-")}
                       required
                       defaultValue={selected.employeeNo}
                     />
@@ -2754,6 +3108,10 @@ export default function HrisApp({ today }: { today: string }) {
                     Email
                     <Input
                       name="email"
+                      readOnly={
+                        live &&
+                        accounts.some((a) => a.employeeId === selected.id)
+                      }
                       type="email"
                       required
                       defaultValue={selected.email}
@@ -2764,7 +3122,11 @@ export default function HrisApp({ today }: { today: string }) {
                     <select name="dept" defaultValue={selected.dept}>
                       {[
                         ...new Set([
-                          ...people.map((p) => p.dept),
+                          ...(live
+                            ? master
+                                .filter((d) => d.status === "ACTIVE")
+                                .map((d) => d.name)
+                            : people.map((p) => p.dept)),
                           ...extraDepts,
                         ]),
                       ].map((s) => (
@@ -2774,11 +3136,26 @@ export default function HrisApp({ today }: { today: string }) {
                   </label>
                   <label>
                     Jabatan
-                    <Input
-                      name="position"
-                      required
-                      defaultValue={selected.position}
-                    />
+                    {live ? (
+                      <select
+                        name="position"
+                        required
+                        defaultValue={selected.position}
+                      >
+                        <option value="">Pilih jabatan</option>
+                        {masterPositions
+                          .filter((p) => p.status === "ACTIVE")
+                          .map((p) => (
+                            <option key={p.id}>{p.name}</option>
+                          ))}
+                      </select>
+                    ) : (
+                      <Input
+                        name="position"
+                        required
+                        defaultValue={selected.position}
+                      />
+                    )}
                   </label>
                   <label>
                     Gaji pokok
@@ -2860,7 +3237,7 @@ export default function HrisApp({ today }: { today: string }) {
                 <>
                   <p className="full">
                     {selected.name} · {period} · Gaji pokok{" "}
-                    {money(selected.salary)}
+                    {money(live ? payFor(selected).salary : selected.salary)}
                   </p>
                   <label>
                     Tunjangan
@@ -2887,7 +3264,11 @@ export default function HrisApp({ today }: { today: string }) {
                     <Input
                       type="number"
                       min="0"
-                      max={selected.salary + allowance + bonus}
+                      max={
+                        (live ? payFor(selected).salary : selected.salary) +
+                        allowance +
+                        bonus
+                      }
                       required
                       value={deduction}
                       onChange={(e) => setDeduction(Number(e.target.value))}
@@ -2947,8 +3328,12 @@ export default function HrisApp({ today }: { today: string }) {
                 >
                   Batal
                 </Button>
-                <Button type="submit">
-                  {dialog === "leave" ? "Kirim pengajuan" : "Simpan"}
+                <Button type="submit" disabled={live && accountBusy !== null}>
+                  {dialog === "leave"
+                    ? "Kirim pengajuan"
+                    : dialog === "invite"
+                      ? "Kirim undangan"
+                      : "Simpan"}
                 </Button>
               </div>
             </form>
@@ -2982,7 +3367,7 @@ export default function HrisApp({ today }: { today: string }) {
                 </span>
               </div>
               {role === "Admin HR" && (
-                <Button onClick={() => setDialog("employee")}>
+                <Button disabled={employeeBusy} onClick={() => edit(selected)}>
                   Edit karyawan
                 </Button>
               )}
@@ -3057,18 +3442,19 @@ export default function HrisApp({ today }: { today: string }) {
           {dialog === "help" && (
             <div className="help-copy">
               <p>
-                Ganti peran di kanan atas untuk mencoba Admin HR, Manager, atau
-                Karyawan.
+                {live
+                  ? "Hak akses berasal dari akun login. Hubungi Admin HR bila perlu perubahan peran atau status."
+                  : "Ganti peran di kanan atas untuk mencoba Admin HR, Manager, atau Karyawan."}
               </p>
               <p>
                 Admin HR mengelola karyawan dan payroll. Manager memutuskan cuti
-                dan memberi penilaian tim Engineering. Karyawan dapat absen,
+                dan memberi penilaian tim departemennya. Karyawan dapat absen,
                 mengajukan cuti, serta melihat slip gaji.
               </p>
               <p>
-                Perubahan berlaku selama sesi. Refresh mengembalikan data
-                contoh. Autentikasi dan database Supabase disiapkan pada tahap
-                backend.
+                {live
+                  ? "Perubahan disimpan ke Supabase. Payroll yang sudah diterbitkan tidak bisa diedit. Bila data berubah, muat ulang sebelum menyimpan. Pemulihan kata sandi tersedia di halaman masuk."
+                  : "Perubahan demo berlaku selama sesi. Refresh mengembalikan data contoh."}
               </p>
             </div>
           )}

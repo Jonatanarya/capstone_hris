@@ -109,8 +109,10 @@ export const api = {
     new ApiError(404, "NOT_FOUND", message),
   conflict: (code: ApiErrorCode, message: string) =>
     new ApiError(409, code, message),
-  validation: (fieldErrors: Record<string, string[]>, message = "Data tidak valid") =>
-    new ApiError(422, "VALIDATION_ERROR", message, fieldErrors),
+  validation: (
+    fieldErrors: Record<string, string[]>,
+    message = "Data tidak valid",
+  ) => new ApiError(422, "VALIDATION_ERROR", message, fieldErrors),
   serviceUnavailable: (message = "Layanan tidak tersedia") =>
     new ApiError(503, "SERVICE_UNAVAILABLE", message),
 };
@@ -127,10 +129,25 @@ export async function handle(fn: () => Promise<Response>): Promise<Response> {
 }
 
 /** Baca JSON body, tolak bila tidak valid. */
-export async function readJson(request: Request): Promise<unknown> {
+export async function readJson(
+  request: Request,
+): Promise<Record<string, unknown>> {
+  if (
+    request.headers.get("content-type")?.split(";")[0].trim() !==
+    "application/json"
+  ) {
+    throw api.invalidJson("Gunakan Content-Type application/json");
+  }
+  let body: unknown;
   try {
-    return await request.json();
+    const text = await request.text();
+    if (new TextEncoder().encode(text).byteLength > 32768)
+      throw api.invalidJson("Body terlalu besar");
+    body = JSON.parse(text);
   } catch {
     throw api.invalidJson();
   }
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw api.invalidJson("Body harus berupa objek JSON");
+  return body as Record<string, unknown>;
 }

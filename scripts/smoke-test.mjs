@@ -15,7 +15,8 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const pub =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const PW = process.env.SEED_PASSWORD ?? "Demo-Password-123!";
+const PW = process.env.SEED_PASSWORD;
+if (!PW) throw new Error("Isi SEED_PASSWORD secara privat untuk akun staging uji.");
 
 const EMP = {
   hr: "nadia.putri@example.test",

@@ -34,13 +34,15 @@ export async function POST(request: Request) {
 
     const body = (await readJson(request)) as { name?: string };
     const name = String(body.name ?? "").trim();
-    if (!name || name.length > 150) throw api.validation({ name: ["1–150 karakter"] });
+    if (!name || name.length > 150)
+      throw api.validation({ name: ["1–150 karakter"] });
 
-    const { data, error } = await supabase
-      .from("positions")
-      .insert({ name })
-      .select("id, name, status, version")
-      .single();
+    const { data, error } = await supabase.rpc("write_master", {
+      p_kind: "positions",
+      p_id: null,
+      p_name: name,
+      p_expected_version: null,
+    });
     if (error) throw toApiError(error);
     return created(masterDto(data));
   });

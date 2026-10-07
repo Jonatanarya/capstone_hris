@@ -8,7 +8,11 @@ export async function POST(request: Request) {
     const body = (await readJson(request)) as Record<string, unknown>;
 
     // Login tidak boleh menentukan peran.
-    if (body.role !== undefined || body.userId !== undefined || body.employeeId !== undefined) {
+    if (
+      body.role !== undefined ||
+      body.userId !== undefined ||
+      body.employeeId !== undefined
+    ) {
       throw api.validation({
         role: ["Peran tidak boleh ditentukan saat login"],
       });
@@ -22,11 +26,19 @@ export async function POST(request: Request) {
     if (Object.keys(fieldErrors).length) throw api.validation(fieldErrors);
 
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (error) throw api.invalidCredentials();
 
-    const actor = await getActor(supabase);
-    assertActive(actor);
-    return ok(await buildMe(supabase, actor));
+    try {
+      const actor = await getActor(supabase);
+      assertActive(actor);
+      return ok(await buildMe(supabase, actor));
+    } catch (error) {
+      await supabase.auth.signOut({ scope: "local" });
+      throw error;
+    }
   });
 }

@@ -23,11 +23,15 @@ export async function PATCH(
     const body = (await readJson(request)) as Record<string, unknown>;
     const allowed = new Set(["role", "accountStatus", "expectedVersion"]);
     for (const key of Object.keys(body)) {
-      if (!allowed.has(key)) throw api.validation({ [key]: ["Field tidak dikenal"] });
+      if (!allowed.has(key))
+        throw api.validation({ [key]: ["Field tidak dikenal"] });
     }
     const expectedVersion = Number(body.expectedVersion);
     const fieldErrors: Record<string, string[]> = {};
-    if (body.role !== undefined && !ROLES.includes(body.role as (typeof ROLES)[number])) {
+    if (
+      body.role !== undefined &&
+      !ROLES.includes(body.role as (typeof ROLES)[number])
+    ) {
       fieldErrors.role = ["Nilai tidak dikenal"];
     }
     if (
@@ -49,7 +53,13 @@ export async function PATCH(
     });
     if (error) throw toApiError(error);
 
-    const p = data as { user_id: string; employee_id: string; role: string; account_status: string; version: number };
+    const p = data as {
+      user_id: string;
+      employee_id: string;
+      role: string;
+      account_status: string;
+      version: number;
+    };
     return ok({
       userId: p.user_id,
       employeeId: p.employee_id,

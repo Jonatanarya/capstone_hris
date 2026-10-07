@@ -21,7 +21,8 @@ export async function PUT(
 ) {
   return handle(async () => {
     const { id, period } = await params;
-    if (!isUuid(id) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) throw api.notFound();
+    if (!isUuid(id) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
+      throw api.notFound();
 
     const supabase = await createSupabaseServerClient();
     const actor = await getActor(supabase);
@@ -31,7 +32,8 @@ export async function PUT(
     const body = (await readJson(request)) as Record<string, unknown>;
     const allowed = new Set(["score", "notes", "expectedVersion"]);
     for (const key of Object.keys(body)) {
-      if (!allowed.has(key)) throw api.validation({ [key]: ["Field tidak dikenal"] });
+      if (!allowed.has(key))
+        throw api.validation({ [key]: ["Field tidak dikenal"] });
     }
     const score = Number(body.score);
     const notes = String(body.notes ?? "");

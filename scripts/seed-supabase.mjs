@@ -13,7 +13,16 @@ for (const file of [".env.local", ".env"]) {
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const password = process.env.SEED_PASSWORD ?? "Demo-Password-123!";
+const password = process.env.SEED_PASSWORD;
+if (!password || password.length < 12) {
+  console.error("SEED_PASSWORD wajib diisi secara privat (minimal 12 karakter), tanpa sandi bawaan.");
+  process.exit(1);
+}
+const projectRef = url ? new URL(url).hostname.split(".")[0] : "";
+if (projectRef !== "localhost" && projectRef !== "127" && process.env.SEED_CONFIRM_PROJECT !== projectRef) {
+  console.error("Seed remote ditolak. Hanya jalankan pada staging yang disengaja dengan SEED_CONFIRM_PROJECT yang cocok.");
+  process.exit(1);
+}
 
 if (!url || !secret) {
   console.error(
@@ -75,4 +84,4 @@ for (const f of fixtures) {
   }
 }
 
-console.log(`\nSelesai: ${ok} sukses, ${failed} gagal. Kata sandi test: ${password}`);
+console.log(`\nSelesai: ${ok} sukses, ${failed} gagal. Kata sandi tidak ditampilkan.`);

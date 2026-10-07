@@ -38,11 +38,12 @@ export async function POST(request: Request) {
       throw api.validation({ name: ["1–150 karakter"] });
     }
 
-    const { data, error } = await supabase
-      .from("departments")
-      .insert({ name })
-      .select("id, name, status, version")
-      .single();
+    const { data, error } = await supabase.rpc("write_master", {
+      p_kind: "departments",
+      p_id: null,
+      p_name: name,
+      p_expected_version: null,
+    });
     if (error) throw toApiError(error);
     return created(masterDto(data));
   });

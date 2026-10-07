@@ -6,7 +6,12 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const PORT = Number(process.env.E2E_PORT ?? 5173);
 const base = `http://localhost:${PORT}`;
-const PW = process.env.SEED_PASSWORD ?? "Demo-Password-123!";
+const PW = process.env.SEED_PASSWORD;
+if (!PW) throw new Error("Isi SEED_PASSWORD secara privat untuk akun staging uji.");
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (input, init = {}) => originalFetch(input, { ...init, headers: {
+  Origin: base, "X-HRIS-Request": "1", ...init.headers,
+} });
 
 const child = spawn(
   process.execPath,

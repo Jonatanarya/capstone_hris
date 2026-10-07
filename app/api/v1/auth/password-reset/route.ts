@@ -13,7 +13,9 @@ export async function POST(request: Request) {
         ? new URL(request.url).origin
         : undefined;
       await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: origin ? `${origin}/auth/recovery` : undefined,
+        redirectTo: origin
+          ? `${origin}/api/v1/auth/callback?type=recovery`
+          : undefined,
       });
     }
     return ok({ sent: true });

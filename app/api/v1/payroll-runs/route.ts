@@ -39,7 +39,9 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from("payroll_runs")
-      .select("id, period, status, published_at, published_by, version", { count: "exact" })
+      .select("id, period, status, published_at, published_by, version", {
+        count: "exact",
+      })
       .order("period", { ascending: false })
       .range(from, to);
     if (period) query = query.eq("period", period);
@@ -63,7 +65,9 @@ export async function POST(request: Request) {
       throw api.validation({ period: ["Format YYYY-MM"] });
     }
 
-    const { data, error } = await supabase.rpc("create_payroll_run", { p_period: period });
+    const { data, error } = await supabase.rpc("create_payroll_run", {
+      p_period: period,
+    });
     if (error) throw toApiError(error);
     return created(runDto(data as RunRow));
   });

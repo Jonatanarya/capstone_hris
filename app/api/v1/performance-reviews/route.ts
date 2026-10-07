@@ -45,7 +45,8 @@ export async function GET(request: Request) {
 
     let employeeId = url.searchParams.get("employeeId");
     if (actor.role === "EMPLOYEE") employeeId = actor.employeeId;
-    if (employeeId && !isUuid(employeeId)) throw api.invalidQuery("employeeId tidak valid");
+    if (employeeId && !isUuid(employeeId))
+      throw api.invalidQuery("employeeId tidak valid");
 
     let query = supabase
       .from("performance_reviews")
@@ -61,6 +62,11 @@ export async function GET(request: Request) {
 
     const { data, error, count } = await query;
     if (error) throw toApiError(error);
-    return listOk((data as unknown as ReviewRow[]).map(reviewDto), page, pageSize, count ?? 0);
+    return listOk(
+      (data as unknown as ReviewRow[]).map(reviewDto),
+      page,
+      pageSize,
+      count ?? 0,
+    );
   });
 }

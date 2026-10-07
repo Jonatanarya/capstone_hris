@@ -3,7 +3,11 @@ import { api, handle, ok } from "@/lib/api/http";
 import { assertActive, getActor } from "@/lib/api/actor";
 import { isUuid } from "@/lib/api/dto";
 import { toApiError } from "@/lib/api/errors";
-import { PAYROLL_ITEM_SELECT, payrollItemDto, type PayrollItemRow } from "@/lib/api/payroll";
+import {
+  PAYROLL_ITEM_SELECT,
+  payrollItemDto,
+  type PayrollItemRow,
+} from "@/lib/api/payroll";
 
 export async function GET(
   _request: Request,
@@ -30,13 +34,23 @@ export async function GET(
       .from("payroll_runs")
       .select("id, period, status, published_at")
       .eq("id", data.payroll_run_id)
-      .maybeSingle<{ id: string; period: string; status: string; published_at: string | null }>();
+      .maybeSingle<{
+        id: string;
+        period: string;
+        status: string;
+        published_at: string | null;
+      }>();
 
     return ok({
       ...payrollItemDto(data),
       isDraftPreview: data.status !== "PUBLISHED",
       run: run
-        ? { id: run.id, period: run.period, status: run.status, publishedAt: run.published_at }
+        ? {
+            id: run.id,
+            period: run.period,
+            status: run.status,
+            publishedAt: run.published_at,
+          }
         : null,
     });
   });

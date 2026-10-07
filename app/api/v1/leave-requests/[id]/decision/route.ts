@@ -20,7 +20,8 @@ export async function POST(
     const body = (await readJson(request)) as Record<string, unknown>;
     const allowed = new Set(["decision", "rejectionReason", "expectedVersion"]);
     for (const key of Object.keys(body)) {
-      if (!allowed.has(key)) throw api.validation({ [key]: ["Field tidak dikenal"] });
+      if (!allowed.has(key))
+        throw api.validation({ [key]: ["Field tidak dikenal"] });
     }
     const decision = String(body.decision ?? "");
     const expectedVersion = Number(body.expectedVersion);

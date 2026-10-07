@@ -21,17 +21,24 @@ afterEach(() => {
 
 describe("hrApi — pembentukan request", () => {
   it("login: POST same-origin dengan header dan body JSON", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(envelope({ userId: "u1" })));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(envelope({ userId: "u1" })));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(hrApi.login("budi@example.co.id", "rahasia")).resolves.toEqual({
-      userId: "u1",
-    });
+    await expect(hrApi.login("budi@example.co.id", "rahasia")).resolves.toEqual(
+      {
+        userId: "u1",
+      },
+    );
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/v1/auth/login");
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("same-origin");
+    expect((init.headers as Record<string, string>)["X-HRIS-Request"]).toBe(
+      "1",
+    );
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
       "application/json",
     );
@@ -70,7 +77,9 @@ describe("hrApi — pembentukan request", () => {
   });
 
   it("inviteAccount: mengirim header Idempotency-Key", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(envelope({ ok: true })));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(envelope({ ok: true })));
     vi.stubGlobal("fetch", fetchMock);
 
     await hrApi.inviteAccount("e1", "MANAGER", "key-123");
@@ -95,6 +104,42 @@ describe("hrApi — pembentukan request", () => {
 });
 
 describe("hrApi — penanganan respons dan error", () => {
+  it("fetches list pages using metadata rather than silently truncating", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ userId: "1" }],
+          meta: { totalPages: 2, total: 2 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: [{ userId: "2" }],
+          meta: { totalPages: 2, total: 2 },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(hrApi.accounts()).resolves.toEqual([
+      { userId: "1" },
+      { userId: "2" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toContain("page=2");
+  });
+  it("does not pretend a too-large list is complete", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ data: [], meta: { total: 10001, totalPages: 101 } }),
+        ),
+    );
+    await expect(hrApi.accounts()).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+  });
   it("membuka envelope data pada respons sukses", async () => {
     vi.stubGlobal(
       "fetch",

@@ -10,7 +10,11 @@ type AccountRow = {
   role: string;
   account_status: string;
   version: number;
-  employees: { employee_no: string; full_name: string; work_email: string } | null;
+  employees: {
+    employee_no: string;
+    full_name: string;
+    work_email: string;
+  } | null;
 };
 
 function accountDto(a: AccountRow) {
@@ -44,6 +48,11 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: true })
       .range(from, to);
     if (error) throw toApiError(error);
-    return listOk((data as unknown as AccountRow[]).map(accountDto), page, pageSize, count ?? 0);
+    return listOk(
+      (data as unknown as AccountRow[]).map(accountDto),
+      page,
+      pageSize,
+      count ?? 0,
+    );
   });
 }

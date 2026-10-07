@@ -1,15 +1,23 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { api, handle, ok, readJson } from "@/lib/api/http";
 import { assertActive, getActor } from "@/lib/api/actor";
-import { employeeAdmin, employeeProfile, employeeSummary, isUuid, type ContactRow, type EmployeeRow } from "@/lib/api/dto";
+import {
+  employeeAdmin,
+  employeeProfile,
+  employeeSummary,
+  isUuid,
+  type ContactRow,
+  type EmployeeRow,
+} from "@/lib/api/dto";
 import { toApiError } from "@/lib/api/errors";
 
 const SELECT =
   "id, employee_no, full_name, work_email, employment_status, joined_on, version, " +
   "departments(id, name), positions(id, name), employee_contacts(phone, address, version)";
 
-type Row = EmployeeRow & { employee_contacts: ContactRow | ContactRow[] | null };
+type Row = EmployeeRow & {
+  employee_contacts: ContactRow | ContactRow[] | null;
+};
 
 export async function GET(
   _request: Request,
@@ -36,13 +44,14 @@ export async function GET(
       : data.employee_contacts;
 
     if (actor.role === "ADMIN_HR") {
-      const admin = createSupabaseAdminClient();
-      const { data: comp } = await admin
-        .from("employee_compensation")
-        .select("base_salary_idr")
-        .eq("employee_id", id)
-        .maybeSingle<{ base_salary_idr: number }>();
-      return ok(employeeAdmin(data, contact, comp?.base_salary_idr ?? null));
+      const { data: salary, error: salaryError } = await supabase.rpc(
+        "employee_compensation_for_hr",
+        { p_employee_id: id },
+      );
+      if (salaryError) throw toApiError(salaryError);
+      if (salary === null)
+        throw api.serviceUnavailable("Data kompensasi belum tersedia");
+      return ok(employeeAdmin(data, contact, Number(salary)));
     }
     if (id === actor.employeeId) return ok(employeeProfile(data, contact));
     return ok(employeeSummary(data));
@@ -64,11 +73,20 @@ export async function PATCH(
 
     const body = (await readJson(request)) as Record<string, unknown>;
     const allowed = new Set([
-      "fullName", "workEmail", "departmentId", "positionId", "employmentStatus",
-      "joinedOn", "phone", "address", "baseSalaryIdr", "expectedVersion",
+      "fullName",
+      "workEmail",
+      "departmentId",
+      "positionId",
+      "employmentStatus",
+      "joinedOn",
+      "phone",
+      "address",
+      "baseSalaryIdr",
+      "expectedVersion",
     ]);
     for (const key of Object.keys(body)) {
-      if (!allowed.has(key)) throw api.validation({ [key]: ["Field tidak dikenal"] });
+      if (!allowed.has(key))
+        throw api.validation({ [key]: ["Field tidak dikenal"] });
     }
     const expectedVersion = Number(body.expectedVersion);
     if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
@@ -82,7 +100,9 @@ export async function PATCH(
         .eq("employee_id", id)
         .maybeSingle();
       if (linked) {
-        throw api.validation({ workEmail: ["Email akun terhubung belum dapat diubah"] });
+        throw api.validation({
+          workEmail: ["Email akun terhubung belum dapat diubah"],
+        });
       }
     }
 
@@ -101,17 +121,23 @@ export async function PATCH(
     });
     if (error) throw toApiError(error);
 
-    const admin = createSupabaseAdminClient();
-    const { data } = await admin.from("employees").select(SELECT).eq("id", id).maybeSingle<Row>();
+    const { data, error: readError } = await supabase
+      .from("employees")
+      .select(SELECT)
+      .eq("id", id)
+      .maybeSingle<Row>();
+    if (readError) throw toApiError(readError);
     if (!data) throw api.notFound();
     const contact = Array.isArray(data.employee_contacts)
       ? (data.employee_contacts[0] ?? null)
       : data.employee_contacts;
-    const { data: comp } = await admin
-      .from("employee_compensation")
-      .select("base_salary_idr")
-      .eq("employee_id", id)
-      .maybeSingle<{ base_salary_idr: number }>();
-    return ok(employeeAdmin(data, contact, comp?.base_salary_idr ?? null));
+    const { data: salary, error: salaryError } = await supabase.rpc(
+      "employee_compensation_for_hr",
+      { p_employee_id: id },
+    );
+    if (salaryError) throw toApiError(salaryError);
+    if (salary === null)
+      throw api.serviceUnavailable("Data kompensasi belum tersedia");
+    return ok(employeeAdmin(data, contact, Number(salary)));
   });
 }

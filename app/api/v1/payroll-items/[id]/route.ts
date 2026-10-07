@@ -19,9 +19,15 @@ export async function PATCH(
     if (actor.role !== "ADMIN_HR") throw api.forbidden();
 
     const body = (await readJson(request)) as Record<string, unknown>;
-    const allowed = new Set(["allowanceIdr", "bonusIdr", "deductionIdr", "expectedVersion"]);
+    const allowed = new Set([
+      "allowanceIdr",
+      "bonusIdr",
+      "deductionIdr",
+      "expectedVersion",
+    ]);
     for (const key of Object.keys(body)) {
-      if (!allowed.has(key)) throw api.validation({ [key]: ["Field tidak dikenal"] });
+      if (!allowed.has(key))
+        throw api.validation({ [key]: ["Field tidak dikenal"] });
     }
     const nums = {
       p_allowance_idr: Number(body.allowanceIdr),
@@ -31,7 +37,8 @@ export async function PATCH(
     const expectedVersion = Number(body.expectedVersion);
     const fieldErrors: Record<string, string[]> = {};
     for (const [key, value] of Object.entries(nums)) {
-      if (!Number.isSafeInteger(value) || value < 0) fieldErrors[key] = ["Integer >= 0"];
+      if (!Number.isSafeInteger(value) || value < 0)
+        fieldErrors[key] = ["Integer >= 0"];
     }
     if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
       fieldErrors.expectedVersion = ["Wajib integer >= 1"];

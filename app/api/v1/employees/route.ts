@@ -3,7 +3,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { api, created, handle, listOk, readJson } from "@/lib/api/http";
 import { assertActive, getActor, requireRole } from "@/lib/api/actor";
 import { EMPLOYEE_SELECT } from "@/lib/api/me";
-import { employeeAdmin, employeeSummary, type EmployeeRow } from "@/lib/api/dto";
+import {
+  employeeAdmin,
+  employeeSummary,
+  isUuid,
+  type EmployeeRow,
+} from "@/lib/api/dto";
 import { pagination, requireEnum } from "@/lib/api/query";
 import { toApiError } from "@/lib/api/errors";
 
@@ -22,6 +27,8 @@ export async function GET(request: Request) {
 
     const { url, page, pageSize, q, from, to } = pagination(request);
     const departmentId = url.searchParams.get("departmentId");
+    if (departmentId && !isUuid(departmentId))
+      throw api.invalidQuery("departmentId harus UUID");
     const employmentStatus = requireEnum(
       url.searchParams.get("employmentStatus"),
       STATUSES,
@@ -45,7 +52,8 @@ export async function GET(request: Request) {
       }
     }
     if (departmentId) query = query.eq("department_id", departmentId);
-    if (employmentStatus) query = query.eq("employment_status", employmentStatus);
+    if (employmentStatus)
+      query = query.eq("employment_status", employmentStatus);
 
     const { data, error, count } = await query;
     if (error) throw toApiError(error);
@@ -68,8 +76,16 @@ export async function POST(request: Request) {
 
     const body = (await readJson(request)) as Record<string, unknown>;
     const required = [
-      "employeeNo", "fullName", "workEmail", "departmentId", "positionId",
-      "employmentStatus", "joinedOn", "phone", "address", "baseSalaryIdr",
+      "employeeNo",
+      "fullName",
+      "workEmail",
+      "departmentId",
+      "positionId",
+      "employmentStatus",
+      "joinedOn",
+      "phone",
+      "address",
+      "baseSalaryIdr",
     ];
     const fieldErrors: Record<string, string[]> = {};
     for (const key of Object.keys(body)) {
@@ -80,11 +96,17 @@ export async function POST(request: Request) {
         fieldErrors[key] = ["Wajib diisi"];
       }
     }
-    if (!STATUSES.includes(body.employmentStatus as (typeof STATUSES)[number])) {
+    if (
+      !STATUSES.includes(body.employmentStatus as (typeof STATUSES)[number])
+    ) {
       fieldErrors.employmentStatus = ["Nilai tidak dikenal"];
     }
     const salary = Number(body.baseSalaryIdr);
-    if (!Number.isSafeInteger(salary) || salary < 0 || salary > 1_000_000_000_000) {
+    if (
+      !Number.isSafeInteger(salary) ||
+      salary < 0 ||
+      salary > 1_000_000_000_000
+    ) {
       fieldErrors.baseSalaryIdr = ["Integer 0–1.000.000.000.000"];
     }
     if (Object.keys(fieldErrors).length) throw api.validation(fieldErrors);
@@ -112,8 +134,6 @@ export async function POST(request: Request) {
       .maybeSingle<EmployeeRow>();
     if (!data) throw api.notFound();
 
-    return created(
-      employeeAdmin(data, null, salary),
-    );
+    return created(employeeAdmin(data, null, salary));
   });
 }

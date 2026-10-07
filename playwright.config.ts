@@ -1,6 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
+  testMatch:
+    process.env.HRIS_E2E_MODE === "live"
+      ? "**/live.spec.ts"
+      : "**/hris.spec.ts",
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,

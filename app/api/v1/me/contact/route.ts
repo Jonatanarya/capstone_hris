@@ -17,8 +17,10 @@ export async function PATCH(request: Request) {
     const address = String(body.address ?? "").trim();
     const expectedVersion = Number(body.expectedVersion);
     const fieldErrors: Record<string, string[]> = {};
-    if (phone.length < 8 || phone.length > 20) fieldErrors.phone = ["8–20 karakter"];
-    if (!address || address.length > 2000) fieldErrors.address = ["1–2000 karakter"];
+    if (phone.length < 8 || phone.length > 20)
+      fieldErrors.phone = ["8–20 karakter"];
+    if (!address || address.length > 2000)
+      fieldErrors.address = ["1–2000 karakter"];
     if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
       fieldErrors.expectedVersion = ["Wajib integer >= 1"];
     }

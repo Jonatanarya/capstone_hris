@@ -18,7 +18,10 @@ type ProfileRow = {
   employee_id: string;
   role: BusinessRole;
   account_status: AccountStatus;
-  employees: { department_id: string; employment_status: "ACTIVE" | "INACTIVE" } | null;
+  employees: {
+    department_id: string;
+    employment_status: "ACTIVE" | "INACTIVE";
+  } | null;
 };
 
 /**
@@ -59,7 +62,9 @@ export function assertActive(actor: Actor) {
   if (actor.accountStatus !== "ACTIVE") {
     throw new ApiError(
       403,
-      actor.accountStatus === "DISABLED" ? "ACCOUNT_DISABLED" : "ACCOUNT_NOT_ACTIVE",
+      actor.accountStatus === "DISABLED"
+        ? "ACCOUNT_DISABLED"
+        : "ACCOUNT_NOT_ACTIVE",
       "Akun tidak aktif",
     );
   }

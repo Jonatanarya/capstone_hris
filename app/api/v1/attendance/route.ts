@@ -36,11 +36,13 @@ export async function GET(request: Request) {
 
     const { url, page, pageSize, from, to } = pagination(request);
     const workDate = url.searchParams.get("date") ?? jakartaDate();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) throw api.invalidQuery("Tanggal tidak valid");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate))
+      throw api.invalidQuery("Tanggal tidak valid");
 
     let employeeId = url.searchParams.get("employeeId");
     if (actor.role === "EMPLOYEE") employeeId = actor.employeeId;
-    if (employeeId && !isUuid(employeeId)) throw api.invalidQuery("employeeId tidak valid");
+    if (employeeId && !isUuid(employeeId))
+      throw api.invalidQuery("employeeId tidak valid");
 
     let query = supabase
       .from("attendances")

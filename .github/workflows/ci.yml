@@ -11,11 +11,38 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_PASSWORD: ci-only-disposable-database
+          POSTGRES_DB: hris_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      HRIS_TEST_DATABASE_URL: postgresql://postgres:ci-only-disposable-database@localhost:5432/hris_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: npm run test:database
   validate:
+    strategy:
+      matrix:
+        mode: [demo, live]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_MODE: ${{ matrix.mode }}
+      HRIS_E2E_MODE: ${{ matrix.mode }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,7 +60,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-failure
+          name: playwright-failure-${{ matrix.mode }}
           path: |
             playwright-report/
             test-results/

@@ -15,7 +15,11 @@ export async function GET(request: Request) {
     assertActive(actor);
 
     const { url, page, pageSize, from, to } = pagination(request);
-    const status = requireEnum(url.searchParams.get("status"), STATUSES, "status");
+    const status = requireEnum(
+      url.searchParams.get("status"),
+      STATUSES,
+      "status",
+    );
     const yearRaw = url.searchParams.get("year");
     const year = yearRaw ? Number(yearRaw) : undefined;
     if (yearRaw && (!Number.isInteger(year) || year! < 2000 || year! > 2100)) {
@@ -23,7 +27,8 @@ export async function GET(request: Request) {
     }
     let employeeId = url.searchParams.get("employeeId");
     if (actor.role === "EMPLOYEE") employeeId = actor.employeeId;
-    if (employeeId && !isUuid(employeeId)) throw api.invalidQuery("employeeId tidak valid");
+    if (employeeId && !isUuid(employeeId))
+      throw api.invalidQuery("employeeId tidak valid");
 
     let query = supabase
       .from("leave_requests")
@@ -37,13 +42,20 @@ export async function GET(request: Request) {
       .range(from, to);
     if (status) query = query.eq("status", status);
     if (year) {
-      query = query.gte("start_date", `${year}-01-01`).lte("start_date", `${year}-12-31`);
+      query = query
+        .gte("start_date", `${year}-01-01`)
+        .lte("start_date", `${year}-12-31`);
     }
     if (employeeId) query = query.eq("employee_id", employeeId);
 
     const { data, error, count } = await query;
     if (error) throw toApiError(error);
-    return listOk((data as unknown as LeaveRow[]).map(leaveDto), page, pageSize, count ?? 0);
+    return listOk(
+      (data as unknown as LeaveRow[]).map(leaveDto),
+      page,
+      pageSize,
+      count ?? 0,
+    );
   });
 }
 
@@ -57,7 +69,8 @@ export async function POST(request: Request) {
     const body = (await readJson(request)) as Record<string, unknown>;
     const allowed = new Set(["type", "startDate", "endDate", "reason"]);
     for (const key of Object.keys(body)) {
-      if (!allowed.has(key)) throw api.validation({ [key]: ["Field tidak dikenal"] });
+      if (!allowed.has(key))
+        throw api.validation({ [key]: ["Field tidak dikenal"] });
     }
     const type = requireEnum(String(body.type ?? ""), TYPES, "type");
     const start = String(body.startDate ?? "");
@@ -65,9 +78,12 @@ export async function POST(request: Request) {
     const reason = String(body.reason ?? "").trim();
     const fieldErrors: Record<string, string[]> = {};
     if (!type) fieldErrors.type = ["Wajib diisi"];
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) fieldErrors.startDate = ["Format YYYY-MM-DD"];
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) fieldErrors.endDate = ["Format YYYY-MM-DD"];
-    if (!reason || reason.length > 2000) fieldErrors.reason = ["1–2000 karakter"];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start))
+      fieldErrors.startDate = ["Format YYYY-MM-DD"];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end))
+      fieldErrors.endDate = ["Format YYYY-MM-DD"];
+    if (!reason || reason.length > 2000)
+      fieldErrors.reason = ["1–2000 karakter"];
     if (Object.keys(fieldErrors).length) throw api.validation(fieldErrors);
 
     const { data, error } = await supabase.rpc("create_leave_request", {

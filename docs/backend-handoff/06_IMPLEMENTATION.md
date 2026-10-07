@@ -1,5 +1,9 @@
 # 06 — Implementasi backend Supabase
 
+> Catatan implementasi awal. Status dan prosedur keamanan terbaru ada pada
+> [perbaikan 7 Oktober 2026](../PERBAIKAN_FULLSTACK_2026-10-07.md).
+> Jangan replay schema/seed pada project yang sudah terisi; runner sekarang mewajibkan migration eksplisit.
+
 **Status: SUDAH DITERAPKAN pada project staging `btzqutfgxsiyerfrzrhu`.** Migration
 (0001–0005) sudah dijalankan, akun uji Auth sudah dibuat, dan uji RLS (10/10) serta
 uji HTTP route handler (5/5) lulus. Yang **belum**: penggantian penuh data demo di
@@ -52,7 +56,9 @@ Alternatif CLI resmi: `npx supabase link --project-ref <ref>` lalu `npx supabase
 
 ## 4. Akun uji (sudah dibuat)
 
-Sandi default `Demo-Password-123!` (`SEED_PASSWORD` untuk mengubah).
+Sandi wajib diisi secara privat melalui `SEED_PASSWORD`; tidak ada sandi bawaan.
+Sandi lama pernah tercantum di riwayat Git dan WAJIB dirotasi oleh pemilik.
+Menghapus teks sandi tidak menghapus kebocoran dari riwayat maupun mengubah akun yang sudah ada.
 
 | Alias | Email | Role/status |
 | --- | --- | --- |

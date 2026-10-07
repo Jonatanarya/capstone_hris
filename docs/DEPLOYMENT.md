@@ -41,8 +41,10 @@ Diuji langsung ke `https://peoplespace-hris.vercel.app`:
   EMPLOYEE `rizky.pratama` → `/employees` **403 FORBIDDEN**;
   akun nonaktif `bima.aditya` → login **403** (`EMPLOYEE_INACTIVE`).
 
+Status hardening terbaru dan batas pengujian ada di [perbaikan full-stack](PERBAIKAN_FULLSTACK_2026-10-07.md).
+
 Sumber data nyata memakai project Supabase `btzqutfgxsiyerfrzrhu`
-(12 tabel, RLS aktif, 13 RPC) dengan akun uji seed (sandi `Demo-Password-123!`).
+(12 tabel, RLS aktif, RPC bisnis) dengan akun uji seed (sandi tidak dipublikasikan).
 Akun uji hanya untuk demo akademik; ganti sandi sebelum dipakai publik.
 
 ### Temuan E2E alur tulis (2026-10-06, lanjutan)
