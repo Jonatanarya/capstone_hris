@@ -20,19 +20,21 @@ Dokumen ini menindaklanjuti [audit awal](AUDIT_FULLSTACK_2026-10-07.md). Audit a
 - Migration baru `0007`/`0008` additive; migration lama tidak di-replay. Runner menolak pemilihan file kosong, transaksi atomik per file, berhenti jika gagal, dan merekam checksum yang dinormalisasi newline pada `private.app_migrations`. Ledger ini **bukan** ledger Supabase CLI; jangan memakai kedua mekanisme pada project yang sama tanpa rekonsiliasi.
 - Sandi default dihapus dari script/dokumentasi dan tidak dicetak oleh seed. Provisioning seed remote membutuhkan konfirmasi project eksplisit; tidak dilakukan selama perbaikan.
 
-Template email mengikuti [dokumentasi resmi Supabase](https://supabase.com/docs/guides/auth/auth-email-templates): tautan token_hash diproses aplikasi sebelum membuat sesi server. Script konfigurasi mempertahankan isi template lama dan hanya mengganti tautan konfirmasi. SMTP dan kredensial tidak dicetak atau diubah.
+Template email produksi **tidak diubah**: Supabase menolak modifikasi template pada free tier yang memakai penyedia email default. Jalur default undangan memakai `/auth/confirm?type=invite`: fragment token segera dibuang dari address bar, tidak disimpan di localStorage/sessionStorage, lalu dikirim hanya ke server same-origin. Server memverifikasi signature JWT dan identitas melalui Auth, AMR OTP/invite maksimal 15 menit, email terkonfirmasi, status profile masih INVITED, dan identitas refresh token yang sama sebelum menerbitkan signed flow HttpOnly. Sesi password biasa tidak dianggap bukti undangan. Status ACTIVE baru ditetapkan setelah password berhasil disimpan.
+
+Reset password default memakai callback PKCE. Callback token_hash tetap didukung. Opsi script `--templates` mengikuti [dokumentasi resmi Supabase](https://supabase.com/docs/guides/auth/auth-email-templates), mempertahankan isi template, tetapi hanya digunakan bila SMTP/plan sudah memungkinkan. Tidak ada SMTP/kredensial yang dicetak atau diubah.
 
 ## Verifikasi lokal
 
-| Pemeriksaan                  | Hasil / cakupan                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Unit/API mock                | 63/63 lulus, termasuk idempotensi dan provisioning gagal sebagian; tidak mengirim email                |
-| Database rollback            | 39/39 assertion lulus pada project terkonfigurasi dengan migration pending di dalam transaksi rollback |
-| Desktop + mobile demo        | 12/12 lulus                                                                                            |
-| Desktop + mobile live        | 8/8 lulus; API data dimock, sedangkan guard CSRF dan signed-flow menggunakan server nyata              |
-| Lint seluruh app/lib/proxy   | Tanpa warning                                                                                          |
-| TypeScript + build demo/live | Lulus                                                                                                  |
-| Dependency production        | 0 vulnerability saat pengujian                                                                         |
+| Pemeriksaan                  | Hasil / cakupan                                                                                          |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Unit/API mock                | 76/76 lulus, termasuk idempotensi, provisioning gagal sebagian, dan bukti undangan; tidak mengirim email |
+| Database rollback            | 39/39 assertion lulus pada project terkonfigurasi dengan migration pending di dalam transaksi rollback   |
+| Desktop + mobile demo        | 12/12 lulus                                                                                              |
+| Desktop + mobile live        | 12/12 lulus termasuk default invite bridge; API data dimock, guard CSRF/signed-flow memakai server nyata |
+| Lint seluruh app/lib/proxy   | Tanpa warning                                                                                            |
+| TypeScript + build demo/live | Lulus                                                                                                    |
+| Dependency production        | 0 vulnerability saat pengujian                                                                           |
 
 CI sekarang menjalankan matrix demo/live dan job PostgreSQL terisolasi yang memasang migration dari awal lalu menguji 39 assertion. Auth pada job database adalah stand-in JWT/role, **bukan** layanan Auth/SMTP Supabase. CD tetap hanya deploy SHA main yang seluruh CI-nya sukses.
 
@@ -57,6 +59,15 @@ node scripts/configure-auth.mjs --site-url https://peoplespace-hris.vercel.app
 # Tambah --apply hanya untuk konfigurasi yang memang akan dipersist.
 ```
 
-Auth hardening menutup self-signup, mengatur Site URL produksi dan allowlist callback invite/recovery, minimum password setidaknya 8 karakter, serta template token_hash. Tidak mengirim email, mengubah password, atau merotasi key.
+Auth hardening sudah diterapkan dan dibaca ulang: self-signup ditutup, Site URL produksi dan allowlist callback invite/recovery/default bridge diatur, minimum password 8 karakter. Template tetap bawaan. Tidak mengirim email, mengubah password, atau merotasi key.
 
-Hasil deployment dan pengujian produksi setelah perubahan dicatat pada bagian berikut setelah workflow selesai.
+## Verifikasi produksi
+
+Perbaikan utama `af58897` sudah di-push ke main. [CI](https://github.com/Jonatanarya/capstone_hris/actions/runs/37605739136) dan [CD Vercel](https://github.com/Jonatanarya/capstone_hris/actions/runs/37605940977) sukses. Migration 0007 dan 0008 diterapkan atomik dan checksum tercatat; database regression sesudah migration 39/39 lulus.
+
+- HTTP/API produksi: 88/88 lulus untuk akses anonim, HR/Manager/Employee, akun inactive/disabled/invited, salary isolation, CSV filter, validasi kalender/UUID/JSON/version, role tampering, dan cross-origin mutation.
+- Pengujian RLS langsung: 24/24 lulus. Database rollback tambahan 11/11 dan 18/18 lulus, termasuk pengajuan cuti paralel yang dibatasi lock; tidak menyimpan transaksi pengujian.
+- Browser produksi dengan login HR nyata: data gaji/kontak detail lengkap, peran akun dari database, self-HR guard, semua 11 modul pada mobile tanpa horizontal overflow, tidak ada unbounded request loop/page error, cookie Secure + HttpOnly, logout mengakhiri sesi. Tidak menyimpan form atau mengirim undangan.
+- Header keamanan tersedia, recovery page HTTP 200, integritas fixture payroll/presensi/metadata keputusan tidak menunjukkan mismatch. Jumlah bisnis tetap 10 employee, 4 leave, 2 payroll run/14 item, 2 attendance, dan 18 audit.
+
+Follow-up dukungan template default lulus 76 unit/API test dan 12 live browser test lokal. Status CI/CD untuk SHA terbaru dapat diperiksa pada [GitHub Actions](https://github.com/Jonatanarya/capstone_hris/actions). Email/inbox/aktivasi password sungguhan tetap merupakan UAT staging yang belum dilakukan.

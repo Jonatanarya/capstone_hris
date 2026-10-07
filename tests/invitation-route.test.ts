@@ -65,6 +65,9 @@ describe("invitation provisioning — mocked Auth, never sends email", () => {
       }),
     );
     expect(mocked.invite).toHaveBeenCalledTimes(1);
+    expect(mocked.invite).toHaveBeenCalledWith("fixture@example.test", {
+      redirectTo: "https://hris.test/auth/confirm?type=invite",
+    });
     expect(mocked.adminRpc.mock.calls.map((args) => args[0])).toEqual([
       "record_invitation_external",
       "finish_account_invitation",

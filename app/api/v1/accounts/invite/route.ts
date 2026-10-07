@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const { data, error } = await admin.auth.admin.inviteUserByEmail(
       claim.email,
       {
-        redirectTo: `${origin}/api/v1/auth/callback?type=invite`,
+        redirectTo: `${origin}/auth/confirm?type=invite`,
       },
     );
     // Keep PROCESSING on uncertain outcomes. A same-key retry never sends a second email.

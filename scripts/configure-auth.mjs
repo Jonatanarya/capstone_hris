@@ -45,10 +45,15 @@ const desired = {
   site_url: origin,
   uri_allow_list: ["invite", "recovery"]
     .map((kind) => `${origin}/api/v1/auth/callback?type=${kind}`)
+    .concat(`${origin}/auth/confirm?type=invite`)
     .join(","),
   password_min_length: Math.max(8, existing.password_min_length ?? 0),
-  mailer_templates_invite_content: template("invite"),
-  mailer_templates_recovery_content: template("recovery"),
+  ...(args.includes("--templates")
+    ? {
+        mailer_templates_invite_content: template("invite"),
+        mailer_templates_recovery_content: template("recovery"),
+      }
+    : {}),
 };
 console.log(
   "Auth plan:",
@@ -57,8 +62,9 @@ console.log(
     disable_signup: true,
     site_url: origin,
     password_min_length: desired.password_min_length,
-    templateLinks:
-      "server token_hash callback; existing email content preserved",
+    templateLinks: args.includes("--templates")
+      ? "server token_hash callback; requires custom SMTP or eligible plan"
+      : "unchanged; default invite fragment bridge + recovery PKCE callback",
   }),
 );
 if (args.includes("--apply")) {
@@ -67,7 +73,15 @@ if (args.includes("--apply")) {
     headers,
     body: JSON.stringify(desired),
   });
-  if (!update.ok) throw new Error("Auth update failed: " + update.status);
+  if (!update.ok) {
+    const error = await update.json().catch(() => null);
+    throw new Error(
+      "Auth update failed: " +
+        update.status +
+        " " +
+        JSON.stringify(error?.message ?? "Validation failed"),
+    );
+  }
   const verify = await fetch(endpoint, { headers });
   if (!verify.ok) throw new Error("Auth readback failed: " + verify.status);
   const actual = await verify.json();

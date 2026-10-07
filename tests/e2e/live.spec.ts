@@ -242,3 +242,43 @@ test("real server rejects cross-origin mutations and unsigned password flow", as
   const recovery = await request.get("/auth/recovery");
   expect(recovery.status()).toBe(200);
 });
+
+test("default invite bridge strips fragment and rejects missing tokens without posting", async ({
+  page,
+}) => {
+  let posted = false;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/auth/confirm")) posted = true;
+  });
+  await page.goto(
+    "/auth/confirm?type=invite#type=invite&access_token=not-a-valid-token",
+  );
+  await expect(page.getByRole("status")).toContainText("Tautan tidak valid");
+  expect(new URL(page.url()).hash).toBe("");
+  expect(posted).toBe(false);
+});
+
+test("default invite bridge sends tokens only to same-origin server and surfaces rejection", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/auth/confirm", async (route) => {
+    expect(route.request().headers()["x-hris-request"]).toBe("1");
+    expect(route.request().postDataJSON()).toEqual({
+      access_token: "test-only-access",
+      refresh_token: "test-only-refresh",
+    });
+    await route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { message: "Undangan ditolak" } }),
+    });
+  });
+  await page.goto(
+    "/auth/confirm?type=invite#type=invite&access_token=test-only-access&refresh_token=test-only-refresh",
+  );
+  await expect(page.getByRole("status")).toHaveText("Undangan ditolak");
+  expect(new URL(page.url()).hash).toBe("");
+  expect(
+    await page.evaluate(() => localStorage.length + sessionStorage.length),
+  ).toBe(0);
+});
