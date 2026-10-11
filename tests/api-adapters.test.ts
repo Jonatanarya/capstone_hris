@@ -213,6 +213,7 @@ describe("adapter presensi dan waktu WIB", () => {
       date: "2026-10-05",
       checkIn: "08:30",
       checkOut: "",
+      status: "PRESENT",
     });
   });
 });

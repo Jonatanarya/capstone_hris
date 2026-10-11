@@ -47,7 +47,7 @@ async function signIn(email) {
 
 const hr = await signIn(EMP.hr);
 const { count: hrCount } = await hr.from("employees").select("id", { count: "exact" });
-check("HR melihat seluruh direktori", hrCount === 10, `count=${hrCount}`);
+check("HR melihat direktori termasuk fixture awal", hrCount >= 10, `count=${hrCount}`);
 
 const mgr = await signIn(EMP.manager);
 const { data: mgrRows, count: mgrCount } = await mgr
@@ -68,9 +68,11 @@ const other = await signIn(EMP.other);
 const { count: otherCount } = await other.from("employees").select("id", { count: "exact" });
 check("Karyawan lain hanya melihat dirinya", otherCount === 1, `count=${otherCount}`);
 
-// Manager tidak boleh menyentuh payroll.
-const { count: mgrPayroll } = await mgr.from("payroll_runs").select("id", { count: "exact" });
-check("Manager tidak melihat payroll", (mgrPayroll ?? 0) === 0, `count=${mgrPayroll}`);
+// Manager may read only their own published items, never administrative payroll.
+const { data: { user: managerUser } } = await mgr.auth.getUser();
+const { data: managerProfile } = await mgr.from("user_profiles").select("employee_id").eq("user_id", managerUser.id).single();
+const { data: mgrPayroll, error: payrollError } = await mgr.from("payroll_items").select("employee_id,status");
+check("Manager hanya membaca slip terbit pribadi", !payrollError && (mgrPayroll ?? []).every(item => item.employee_id === managerProfile.employee_id && item.status === "PUBLISHED"));
 
 // Karyawan tidak boleh memanggil RPC HR.
 const { error: rpcErr } = await eng.rpc("create_employee", {

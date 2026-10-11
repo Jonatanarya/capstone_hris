@@ -50,6 +50,7 @@ if (ciDatabase) {
     ...(process.argv.includes("--pending-payroll")
       ? ["0009_payroll_readiness.sql"]
       : []),
+    ...(process.argv.includes("--pending-workflows") ? ["0011_demo_workflows.sql"] : []),
   ];
   const pending = pendingFiles
     .map((f) => read("supabase/migrations/" + f))

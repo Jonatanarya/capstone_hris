@@ -1,6 +1,8 @@
 # PeopleSpace — HRIS Capstone 4E
 
-Frontend HRIS berdasarkan `Perencanaan_HRIS_Final_v2.md`, dengan tampilan sederhana, terang, responsif, dan aksen biru.
+Aplikasi HRIS demo Capstone berbasis Next.js + Supabase, berdasarkan `Perencanaan_HRIS_Final_v2.md`, dengan tampilan sederhana, terang, responsif, dan aksen biru.
+
+Deployment memakai mode **live/persisten**, bukan simulasi memori. Mode `demo` offline tetap tersedia untuk pengujian tanpa Supabase. Lihat [panduan presentasi dan alur role](docs/DEMO_CAPSTONE.md) untuk perubahan 11 Oktober 2026.
 
 ## Menjalankan
 
@@ -36,13 +38,15 @@ Tes browser menjalankan server produksi sendiri di port 5173. Matikan server dev
 - Master departemen/jabatan: tambah, ubah nama dan referensi terkait. Akun: pengaturan peran/status simulasi, identitas penguji dikunci.
 - Laporan: rekap CSV dengan escaping kutipan dan perlindungan formula spreadsheet.
 
-Ganti peran melalui pilihan di kanan atas. Admin HR adalah Nadia Putri, Manager adalah Dimas Saputra (tim Engineering), Karyawan adalah Rizky Pratama.
+Hanya pada mode offline: ganti peran melalui pilihan di kanan atas (Nadia/Dimas/Rizky). Pada mode live: role ditentukan akun login, termasuk Faisal sebagai HR, Wilda sebagai Manager, dan anggota kelas lain sebagai Karyawan. Tidak ada pemilih role yang memberikan akses nyata.
 
-## Batas tahap frontend
+## Mode dan batas demo
 
-Semua nama, email, nominal, presensi, dan penilaian merupakan data fiktif. Data disimpan di memori selama sesi dan kembali ke awal saat refresh. Pemilihan peran dan halaman login hanya simulasi UI, bukan autentikasi atau pengamanan akses. Tidak ada pemrosesan gaji sungguhan. Ringkasan mingguan adalah ilustrasi.
+Mode offline (`NEXT_PUBLIC_API_MODE=demo`, default jika tidak ditentukan) memakai fixture fiktif di memori dan kembali ke awal saat refresh. Login, pemilih role, dan chart mingguan pada mode ini adalah simulasi. Untuk tes browser offline, build dengan mode demo terlebih dahulu.
 
-Belum terhubung ke Supabase/database/API. Aturan demo: kuota 12 hari/tahun, Senin–Jumat (tanpa kalender libur nasional), jam 08.00–17.00 WIB. Bukan aturan hukum atau kebijakan HR final. Integrasi backend, autentikasi, RLS, kalender libur, pengujian keamanan, transaksi dan penyimpanan merupakan tahap berikutnya. Pengaturan peran/status akun tidak mengubah hak akses login nyata. Semua akun demo dimulai aktif untuk identitas penguji.
+Mode live (`NEXT_PUBLIC_API_MODE=live`) memakai autentikasi Supabase, API same-origin, RLS, transaksi, optimistic version, dan audit. Data tersimpan setelah refresh. Semua role dapat mengajukan cuti, melihat slip pribadi yang terbit, dan mengajukan koreksi absensi; HR mengelola kebijakan/kalender serta riwayat aktivitas. Notifikasi berasal dari data tersimpan dan status dibaca disimpan per akun. Chart kehadiran live memakai catatan tujuh hari terakhir, bukan angka ilustrasi.
+
+Default kebijakan demo: 12 hari/tahun, Senin–Jumat, 08.00–17.00 WIB, laporan sakit mundur maksimal tujuh hari. HR dapat mengubahnya; bukan ketentuan hukum. Alias `@example.test` bukan inbox. Password NIM tetap untuk demo sampai pemilik menggantinya secara opsional. Gaji anggota baru belum diisi; payroll tidak dapat diterbitkan sebelum nominal dilengkapi. Aplikasi tidak melakukan transfer uang, pajak, prorata otomatis, atau penggajian produksi.
 
 ## Desain Figma
 
@@ -64,7 +68,7 @@ Next.js resmi (App Router) + React + TypeScript, Tailwind CSS, komponen shadcn, 
 - `lib/hris.ts`: aturan demo yang diuji secara terpisah.
 - `tests/`: unit test dan alur browser desktop/ponsel.
 - `docs/`: dokumen perencanaan, audit dan konfigurasi deployment.
-- `.github/workflows/`: CI dan CD yang menunggu konfigurasi Vercel.
+- `.github/workflows/`: CI demo/live + database disposable, lalu CD Vercel untuk SHA yang lolos.
 
 ## Verifikasi
 
@@ -74,8 +78,8 @@ Dialog cetak PDF memakai fitur cetak browser; hasil cetak lintas browser belum t
 
 ## CI/CD
 
-**Frontend CI** berjalan pada push `main` dan pull request. **Deploy Vercel** hanya menerima commit main dari repository ini yang sudah lolos CI, dan hanya aktif setelah konfigurasi. Tidak ada token di repository. Petunjuk aktivasi, rollback dan batasan ada di [panduan deployment](docs/DEPLOYMENT.md). CD yang dilewati karena belum dikonfigurasi bukan deployment sukses.
+**Frontend CI** berjalan pada push `main` dan pull request. **Deploy Vercel** hanya menerima commit main dari repository ini yang sudah lolos CI; integrasi proyek ini sudah aktif. Tidak ada token di repository. Petunjuk konfigurasi, rollback dan batasan ada di [panduan deployment](docs/DEPLOYMENT.md). Migrasi Supabase additive diterapkan terpisah setelah dry-run dan regresi rollback-only; deployment aplikasi tidak mereset data.
 
 ## Handoff untuk teman backend
 
-Mulai dari [paket handoff Supabase](docs/backend-handoff/README.md): kontrak API/DTO, rancangan tabel, matriks RLS, pembagian kerja M0–M6, serta checklist tes dan staging. Statusnya usulan v1 untuk disepakati bersama, **bukan backend yang sudah diimplementasikan**. Target integrasi pertama adalah login nyata, profil dan direktori karyawan sesuai peran. Frontend tetap demo sampai integrasi tersebut dikerjakan.
+[Paket handoff Supabase](docs/backend-handoff/README.md) merupakan rancangan awal v1 dan tidak semuanya mencerminkan implementasi terbaru. Kontrak tambahan, batas role, migrasi 0010–0011, dan skenario UAT terbaru tercatat di [panduan demo](docs/DEMO_CAPSTONE.md). Sumber implementasi aktif adalah route `/api/v1`, migrasi Supabase, dan tes regresi.

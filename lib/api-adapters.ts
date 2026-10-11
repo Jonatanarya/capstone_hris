@@ -141,6 +141,7 @@ const LEAVE_STATUS: Record<string, string> = {
   PENDING: "Menunggu",
   APPROVED: "Disetujui",
   REJECTED: "Ditolak",
+  CANCELLED: "Dibatalkan",
 };
 export function leaveStatusLabel(status: string) {
   return LEAVE_STATUS[status] ?? status;
@@ -163,6 +164,9 @@ export type LeaveDto = {
   decidedAt?: string | null;
   rejectionReason?: string | null;
   version?: number;
+  workingDays?: number;
+  canDecide?: boolean;
+  decidedByName?: string | null;
 };
 
 export type UiLeave = {
@@ -178,6 +182,8 @@ export type UiLeave = {
   decidedAt?: string;
   rejectionReason?: string;
   version?: number;
+  workingDays?: number;
+  canDecide?: boolean;
 };
 
 /** Petakan DTO cuti → bentuk Leave UI. `decidedBy` = userId; dipetakan oleh pemanggil. */
@@ -194,10 +200,12 @@ export function leaveFromDto(
     reason: l.reason,
     status: leaveStatusLabel(l.status),
     submittedAt: l.submittedAt?.slice(0, 10),
-    approver: decidedByName?.(l.decidedBy ?? null),
+    approver: l.decidedByName ?? decidedByName?.(l.decidedBy ?? null),
     decidedAt: l.decidedAt?.slice(0, 10),
     rejectionReason: l.rejectionReason ?? undefined,
     version: l.version,
+    workingDays: l.workingDays,
+    canDecide: l.canDecide,
   };
 }
 
@@ -216,6 +224,7 @@ export type UiAttendance = {
   date: string;
   checkIn: string;
   checkOut: string;
+  status?: string;
 };
 
 /** Format timestamp UTC → "HH:MM" WIB. */
@@ -234,6 +243,7 @@ export function attendanceFromDto(a: AttendanceDto): UiAttendance {
     date: a.workDate,
     checkIn: wibTime(a.checkInAt),
     checkOut: wibTime(a.checkOutAt),
+    status: a.status,
   };
 }
 
@@ -245,6 +255,7 @@ export type ReviewDto = {
   score: number;
   notes: string;
   assessedAt: string;
+  assessedBy?: string;
   version?: number;
 };
 

@@ -1,5 +1,7 @@
 # DOKUMEN PERENCANAAN SISTEM HRIS
 
+> Status implementasi diperbarui 11 Oktober 2026: demo akademik sudah menggunakan Next.js, Vercel dan Supabase (autentikasi/persistensi/RLS). Uraian tahap frontend-only lama tetap menjadi riwayat rancangan; Bagian 27 dan [panduan demo](DEMO_CAPSTONE.md) menggantikan batas implementasi lama bila bertentangan.
+
 ## Human Resource Information System (HRIS) Berbasis Web untuk Pengelolaan Data dan Aktivitas Karyawan
 
 ---
@@ -1184,4 +1186,19 @@ Vercel merupakan pilihan awal sesuai Bagian 18. GitHub Pages dapat menjadi opsi 
 
 ## 26. Pekerjaan yang Tetap Belum Selesai
 
-Prioritas berikutnya: autentikasi nyata, penyimpanan persisten, RLS/otorisasi server, model akun dan supervisor, audit log, integrasi notifikasi, kalender libur/kebijakan cuti, transaksi payroll, koreksi presensi, tes keamanan dan backup. Tidak memasukkan rekrutmen, GPS, fingerprint, perpajakan kompleks atau transfer bank otomatis ke lingkup frontend ini. Perancangan UML dan laporan akademik perlu diselaraskan dengan penambahan FR37–FR45 sebelum laporan akhir diserahkan; diagram yang ada belum otomatis berubah hanya karena dokumen ini diperbarui.
+Autentikasi, persistensi, RLS/server authorization, transaksi payroll, audit, notifikasi in-app, kalender HR dan koreksi presensi sudah diimplementasikan untuk demo. Pekerjaan lanjutan: supervisor/delegasi rinci, backup recovery drill, dan penyelarasan UML. Bukan sistem payroll produksi; tidak mencakup pajak/transfer bank/rekrutmen/GPS/fingerprint. Persyaratan terbaru dijelaskan pada Bagian 27.
+
+## 27. Penyempurnaan Alur Demo Capstone (11 Oktober 2026)
+
+| ID | Kebutuhan terbaru | Aturan |
+| --- | --- | --- |
+| FR46 | Layanan pribadi seluruh role | HR/Manager/Karyawan mengajukan cuti dan membaca slip terbit sendiri; tidak memperoleh akses gaji rekan |
+| FR47 | Persetujuan cuti dan fallback | Manager menangani anggota departemen selain diri sendiri/Manager; HR menangani Manager atau departemen tanpa Manager aktif; tidak ada self-approval |
+| FR48 | Pembatalan pengajuan | Hanya pemilik dan PENDING; status CANCELLED, audit/riwayat tetap, saldo reservasi kembali |
+| FR49 | Absensi sesuai kalender/policy | Status server termasuk detik; hari libur/cuti disetujui tidak check-in; snapshot lama tetap |
+| FR50 | Koreksi absensi | Pengajuan sendiri maksimal 30 hari ke belakang; HR lain memutuskan dengan alasan/version check; tidak langsung overwrite |
+| FR51 | Kebijakan HR | Jam kerja, hari kerja, tanggal libur, kuota default dan batas lapor sakit mundur; HR-only/versioned/audited |
+| FR52 | Notifikasi dan audit | Event relevan dari data persisten + read receipt per akun; HR membaca riwayat tanpa mengubahnya |
+| FR53 | Pengaman layanan pribadi/offboarding | Password opsional dengan verifikasi password saat ini; konfirmasi nonaktif; akun/employee tidak aktif tidak dapat mengakses sistem |
+
+Prioritas tetap demonstrasi mata kuliah. Password NIM dan salary 0 yang belum dikonfigurasi tidak diubah otomatis; nominal contoh perlu diisi HR sebelum payroll terbit. Role berasal dari sesi login, bukan pilihan browser. Payroll menggunakan roster aktif saat diproses; histori effective salary/resign/prorata, delegasi supervisor, review draft-final, entitlement individual di UI dan pembatalan cuti disetujui ditunda. Detail skenario UAT/API/migrasi tersedia pada panduan demo. UML akhir perlu memasukkan CANCELLED, HR fallback, koreksi dan layanan pribadi; diagram lama belum otomatis berubah.

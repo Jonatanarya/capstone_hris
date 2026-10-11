@@ -15,7 +15,7 @@ export async function POST(
     const supabase = await createSupabaseServerClient();
     const actor = await getActor(supabase);
     assertActive(actor);
-    if (actor.role !== "MANAGER") throw api.forbidden();
+    if (actor.role !== "MANAGER" && actor.role !== "ADMIN_HR") throw api.forbidden();
 
     const body = (await readJson(request)) as Record<string, unknown>;
     const allowed = new Set(["decision", "rejectionReason", "expectedVersion"]);

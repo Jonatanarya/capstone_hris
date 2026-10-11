@@ -85,11 +85,19 @@ import {
 } from "@/lib/hris";
 import { isLiveMode } from "@/lib/api-mode";
 import { payrollNet, salaryConfigured } from "@/lib/payroll";
+import { attendanceLabel, isWorkingDate, offsetDate } from "@/lib/workflows";
+import {
+  PersonalServices,
+  PolicySettings,
+  AuditLog,
+  LiveNotifications,
+} from "./demo-workflows";
 import {
   hrApi,
   ApiClientError,
   type Me,
   type DashboardDto,
+  type HrPolicy,
 } from "@/lib/api-client";
 import {
   personFromMe,
@@ -136,6 +144,8 @@ type Leave = {
   decidedAt?: string;
   rejectionReason?: string;
   version?: number;
+  workingDays?: number;
+  canDecide?: boolean;
 };
 const seed: Person[] = [
   ["Nadia Putri", "Human Resources", "HR Specialist", 7500000, 92],
@@ -210,6 +220,9 @@ const menu = [
   { id: "positions", label: "Jabatan", icon: BriefcaseBusiness },
   { id: "accounts", label: "Akun pengguna", icon: Settings2 },
   { id: "profile", label: "Profil saya", icon: Users },
+  { id: "selfservice", label: "Layanan pribadi", icon: Wallet },
+  { id: "policy", label: "Kebijakan HR", icon: Settings2 },
+  { id: "audit", label: "Riwayat aktivitas", icon: Files },
 ];
 const money = (n: number) =>
   new Intl.NumberFormat("id-ID", {
@@ -229,6 +242,7 @@ type AttendanceRecord = {
   date: string;
   checkIn: string;
   checkOut: string;
+  status?: string;
 };
 const seedAttendance = (today: string): AttendanceRecord[] => [
   ...seed
@@ -419,12 +433,27 @@ export default function HrisApp({ today }: { today: string }) {
   const [inviteKeys, setInviteKeys] = useState<Record<string, string>>({});
   const [dashboard, setDashboard] = useState<DashboardDto | null>(null);
   const [liveBalance, setLiveBalance] = useState<number | null>(null);
+  const [policy, setPolicy] = useState<HrPolicy | null>(null);
+  const [policyError, setPolicyError] = useState("");
+  const [attendanceBusy, setAttendanceBusy] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const [leaveType, setLeaveType] = useState("Cuti tahunan");
+  const [ownLeavesOnly, setOwnLeavesOnly] = useState(false);
+  const [leaveYear, setLeaveYear] = useState(Number(today.slice(0, 4)));
+  const [leaveErrorMessage, setLeaveErrorMessage] = useState("");
+  const [employeeStatusDraft, setEmployeeStatusDraft] = useState("Aktif");
+  const [attendanceError, setAttendanceError] = useState("");
   const periods = live
-    ? Array.from({ length: 12 }, (_, offset) => {
-        const date = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
-        date.setUTCMonth(date.getUTCMonth() - offset);
-        return labelFromPeriod(date.toISOString().slice(0, 7));
-      })
+    ? [
+        ...new Set([
+          period,
+          ...Array.from({ length: 36 }, (_, offset) => {
+            const date = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+            date.setUTCMonth(date.getUTCMonth() + 11 - offset);
+            return labelFromPeriod(date.toISOString().slice(0, 7));
+          }),
+        ]),
+      ]
     : ["Oktober 2026", "September 2026", "Agustus 2026"];
   // Identitas demo per peran (id seed string). Pada mode terintegrasi, identitas
   // berasal dari sesi Supabase, bukan dari pemilih peran.
@@ -463,7 +492,9 @@ export default function HrisApp({ today }: { today: string }) {
     () =>
       menu.filter(
         (n) =>
-          role === "Admin HR" ||
+          ((live || !["selfservice", "policy", "audit"].includes(n.id)) &&
+            role === "Admin HR") ||
+          (live && n.id === "selfservice") ||
           (role === "Manager"
             ? [
                 "dashboard",
@@ -482,12 +513,17 @@ export default function HrisApp({ today }: { today: string }) {
                 "profile",
               ].includes(n.id)),
       ),
-    [role],
+    [role, live],
   );
   const visibleLeaves = leaves.filter((l) =>
       team.some((p) => p.id === l.employee),
     ),
-    pending = visibleLeaves.filter((l) => l.status === "Menunggu");
+    pending = visibleLeaves.filter(
+      (l) => l.status === "Menunggu" && (!live || l.canDecide),
+    );
+  const displayedLeaves = visibleLeaves.filter(
+    (l) => !ownLeavesOnly || l.employee === currentUser.id,
+  );
   const active = team.filter((p) => p.status === "Aktif");
   const payrollPeople: Person[] = live
     ? (payPeriod === periodFromLabel(period) ? payItems : []).map((item) => ({
@@ -515,6 +551,24 @@ export default function HrisApp({ today }: { today: string }) {
   );
   const checkIn = mine?.checkIn ?? "",
     checkOut = mine?.checkOut ?? "";
+  const approvedLeaveOn = (employee: string, day: string) =>
+    leaves.find(
+      (l) =>
+        l.employee === employee &&
+        l.status === "Disetujui" &&
+        l.start <= day &&
+        l.end >= day,
+    );
+  const todayWorking = !live || (!!policy && isWorkingDate(today, policy));
+  const todayLeave = approvedLeaveOn(currentUser.id, today);
+  const absenceReason =
+    live && !policy
+      ? policyError
+        ? "Kebijakan gagal dimuat"
+        : "Memuat kebijakan…"
+      : !todayWorking
+        ? "Hari libur"
+        : (todayLeave?.type ?? "");
   const present = active.filter((p) =>
     records.some((r) => r.employee === p.id && r.date === today && r.checkIn),
   );
@@ -613,6 +667,7 @@ export default function HrisApp({ today }: { today: string }) {
   };
   // --- Aksi mode terintegrasi (memanggil `/api/v1`) ---
   const refreshAttendance = useCallback(async (date: string) => {
+    setAttendanceError("");
     try {
       const rows = await hrApi.attendance(date);
       setRecords((rs) => [
@@ -620,9 +675,10 @@ export default function HrisApp({ today }: { today: string }) {
         ...rows.map(attendanceFromDto),
       ]);
     } catch (error) {
-      if (error instanceof ApiClientError && error.status >= 500) {
-        toast.error(error.message);
-      }
+      setRecords((rs) => rs.filter((r) => r.date !== date));
+      setAttendanceError(
+        error instanceof Error ? error.message : "Absensi gagal dimuat",
+      );
     }
   }, []);
   const refreshMaster = useCallback(async () => {
@@ -640,20 +696,20 @@ export default function HrisApp({ today }: { today: string }) {
     }
   }, []);
   const refreshLeaves = useCallback(async (year: number) => {
+    setLeaveErrorMessage("");
     try {
       const rows = await hrApi.leaveRequests({ year, pageSize: 100 });
-      const nameFor = (userId: string | null) => {
-        if (!userId) return undefined;
-        return "Manager";
-      };
-      setLeaves(rows.map((l) => leaveFromDto(l, nameFor)));
+      setLeaves(rows.map((l) => leaveFromDto(l)));
     } catch (error) {
-      if (error instanceof ApiClientError && error.status >= 500) {
-        toast.error(error.message);
-      }
+      setLeaves([]);
+      setLeaveErrorMessage(
+        error instanceof Error ? error.message : "Pengajuan gagal dimuat",
+      );
     }
   }, []);
   const toggleAttendance = async (arrive: boolean) => {
+    if (attendanceBusy) return;
+    setAttendanceBusy(true);
     try {
       if (arrive) await hrApi.checkIn();
       else await hrApi.checkOut();
@@ -663,16 +719,20 @@ export default function HrisApp({ today }: { today: string }) {
       toast.error(
         error instanceof ApiClientError ? error.message : "Absen gagal dicatat",
       );
+    } finally {
+      setAttendanceBusy(false);
     }
   };
   const decideLeave = async (id: string, decision: string) => {
+    if (leaveBusy) return;
+    setLeaveBusy(true);
     const request = leaves.find((l) => l.id === id);
     try {
       await hrApi.decideLeaveRequest(id, {
         decision: leaveStatusCode(decision),
         expectedVersion: request?.version ?? 1,
       });
-      await refreshLeaves(Number(today.slice(0, 4)));
+      await refreshLeaves(leaveYear);
       toast.success("Pengajuan " + decision.toLowerCase());
     } catch (error) {
       toast.error(
@@ -680,6 +740,22 @@ export default function HrisApp({ today }: { today: string }) {
           ? error.message
           : "Keputusan gagal disimpan",
       );
+    } finally {
+      setLeaveBusy(false);
+    }
+  };
+  const cancelLeave = async (request: Leave) => {
+    if (leaveBusy) return;
+    setLeaveBusy(true);
+    try {
+      await hrApi.cancelLeave(request.id, request.version ?? 1);
+      await Promise.all([refreshLeaves(leaveYear), loadBalance()]);
+      toast.success("Pengajuan dibatalkan. Reservasi cuti dilepas.");
+      setDialog(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Pembatalan gagal");
+    } finally {
+      setLeaveBusy(false);
     }
   };
   const loadPayroll = useCallback(async () => {
@@ -803,7 +879,10 @@ export default function HrisApp({ today }: { today: string }) {
             score: r.score,
             notes: r.notes,
             assessedAt: r.assessedAt.slice(0, 10),
-            assessor: r.employeeId === currentUser.id ? "Saya" : "Manager",
+            assessor:
+              r.assessedBy === session?.userId
+                ? currentUser.name
+                : "Manager penilai",
             version: r.version,
           };
         }
@@ -817,6 +896,8 @@ export default function HrisApp({ today }: { today: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
   const createLeaveLive = async (f: FormData) => {
+    if (leaveBusy) return;
+    setLeaveBusy(true);
     try {
       await hrApi.createLeaveRequest({
         type: leaveTypeCode(String(f.get("type"))),
@@ -824,7 +905,9 @@ export default function HrisApp({ today }: { today: string }) {
         endDate: String(f.get("end")),
         reason: String(f.get("reason")).trim(),
       });
-      await refreshLeaves(Number(today.slice(0, 4)));
+      const year = Number(String(f.get("start")).slice(0, 4));
+      setLeaveYear(year);
+      await Promise.all([refreshLeaves(year), loadBalance()]);
       toast.success("Pengajuan berhasil dikirim");
       setDialog(null);
     } catch (error) {
@@ -833,11 +916,21 @@ export default function HrisApp({ today }: { today: string }) {
           ? error.message
           : "Pengajuan gagal dikirim",
       );
+    } finally {
+      setLeaveBusy(false);
     }
   };
   const saveEmployeeLive = async (f: FormData) => {
     if (role !== "Admin HR") {
       toast.error("Hanya Admin HR yang dapat menyimpan karyawan");
+      return;
+    }
+    if (
+      selected.status === "Aktif" &&
+      f.get("status") === "Nonaktif" &&
+      f.get("offboardingConfirm") !== "on"
+    ) {
+      toast.error("Konfirmasi penonaktifan karyawan terlebih dahulu.");
       return;
     }
     const name = String(f.get("name")).trim();
@@ -972,16 +1065,18 @@ export default function HrisApp({ today }: { today: string }) {
     }
   };
   const rejectLeaveLive = async (f: FormData) => {
+    if (leaveBusy) return;
     const reason = String(f.get("reason")).trim();
     const request = leaves.find((l) => l.id === selectedLeave);
     if (!selectedLeave || !request) return;
+    setLeaveBusy(true);
     try {
       await hrApi.decideLeaveRequest(selectedLeave, {
         decision: "REJECTED",
         rejectionReason: reason,
         expectedVersion: request.version ?? 1,
       });
-      await refreshLeaves(Number(today.slice(0, 4)));
+      await refreshLeaves(leaveYear);
       toast.success("Pengajuan ditolak");
       setDialog(null);
     } catch (error) {
@@ -990,6 +1085,8 @@ export default function HrisApp({ today }: { today: string }) {
           ? error.message
           : "Penolakan gagal disimpan",
       );
+    } finally {
+      setLeaveBusy(false);
     }
   };
   const saveContactLive = async (f: FormData) => {
@@ -1162,7 +1259,11 @@ export default function HrisApp({ today }: { today: string }) {
   const loadBalance = useCallback(async () => {
     try {
       setLiveBalance(
-        (await hrApi.leaveBalance(Number(today.slice(0, 4)))).availableDays,
+        (
+          await hrApi.leaveBalance(
+            view === "leave" ? leaveYear : Number(today.slice(0, 4)),
+          )
+        ).availableDays,
       );
     } catch (error) {
       setLiveBalance(null);
@@ -1170,7 +1271,16 @@ export default function HrisApp({ today }: { today: string }) {
         error instanceof Error ? error.message : "Saldo cuti gagal dimuat",
       );
     }
-  }, [today]);
+  }, [today, view, leaveYear]);
+  const loadPolicy = useCallback(async () => {
+    setPolicyError("");
+    try {
+      setPolicy(await hrApi.policy());
+    } catch (e) {
+      setPolicy(null);
+      setPolicyError(e instanceof Error ? e.message : "Kebijakan gagal dimuat");
+    }
+  }, []);
   // Efek pemuatan data: menyinkronkan state React dengan sumber eksternal
   // (`/api/v1`). Pola fetch-async → setState ini sengaja dikecualikan dari
   // aturan `set-state-in-effect` karena memang men-subscribe ke data server.
@@ -1182,16 +1292,24 @@ export default function HrisApp({ today }: { today: string }) {
     return () => window.removeEventListener("hris-session-expired", expire);
   }, [live, loadMe]);
   useEffect(() => {
+    if (live && signed) void loadPolicy();
+  }, [live, signed, loadPolicy]);
+  useEffect(() => {
     if (!live || !signed) return;
     void loadDirectory();
     void refreshAttendance(attendanceDate);
-    void refreshLeaves(Number(today.slice(0, 4)));
+    void refreshLeaves(
+      view === "leave" ? leaveYear : Number(today.slice(0, 4)),
+    );
     void refreshMaster();
     if (role === "Admin HR") void loadAccounts();
-    if (role === "Karyawan") void loadBalance();
+    void loadBalance();
     if (view === "dashboard") {
       void loadDashboard();
       void refreshAttendance(today);
+      if (live)
+        for (let offset = 1; offset <= 6; offset++)
+          void refreshAttendance(offsetDate(today, -offset));
     }
     if (["payroll", "dashboard"].includes(view)) void loadPayroll();
     if (view === "performance") void refreshReviews();
@@ -1202,6 +1320,7 @@ export default function HrisApp({ today }: { today: string }) {
     view,
     attendanceDate,
     period,
+    leaveYear,
     today,
     loadDirectory,
     refreshAttendance,
@@ -1253,7 +1372,7 @@ export default function HrisApp({ today }: { today: string }) {
   const approve = (id: string, status: string) => {
     const request = leaves.find((l) => l.id === id);
     if (
-      role !== "Manager" ||
+      (live ? !request?.canDecide : role !== "Manager") ||
       !request ||
       request.status !== "Menunggu" ||
       request.employee === currentUser.id ||
@@ -1268,7 +1387,8 @@ export default function HrisApp({ today }: { today: string }) {
       return;
     }
     if (live) {
-      void decideLeave(id, "Disetujui");
+      setSelectedLeave(id);
+      setDialog("approve-leave");
       return;
     }
     setLeaves((ls) =>
@@ -1438,6 +1558,9 @@ export default function HrisApp({ today }: { today: string }) {
           "Detail kontak/gaji belum tersedia. Form tidak dibuka agar data tidak tertimpa.",
         );
       setSelected(personFromDto(row));
+      setEmployeeStatusDraft(
+        row.employmentStatus === "ACTIVE" ? "Aktif" : "Nonaktif",
+      );
       setEmployeeMeta((values) => ({
         ...values,
         [row.id]: {
@@ -1461,6 +1584,7 @@ export default function HrisApp({ today }: { today: string }) {
       void showPerson(p, "employee");
       return;
     }
+    setEmployeeStatusDraft(p?.status ?? "Aktif");
     setSelected(
       p ?? {
         id: "new-" + Date.now(),
@@ -1949,14 +2073,18 @@ export default function HrisApp({ today }: { today: string }) {
                 label="Ganti peran demo"
               />
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Notifikasi"
-              onClick={() => setDialog("notifications")}
-            >
-              <Bell size={19} />
-            </Button>
+            {live ? (
+              <LiveNotifications onNavigate={go} />
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Notifikasi"
+                onClick={() => setDialog("notifications")}
+              >
+                <Bell size={19} />
+              </Button>
+            )}
             <Avatar name={currentUser.name} index={2} />
           </div>
         </header>
@@ -1997,8 +2125,13 @@ export default function HrisApp({ today }: { today: string }) {
                     Tambah karyawan
                   </Button>
                 )}
-              {view === "leave" && role === "Karyawan" && (
-                <Button onClick={() => setDialog("leave")}>
+              {view === "leave" && (live || role === "Karyawan") && (
+                <Button
+                  onClick={() => {
+                    setLeaveType("Cuti tahunan");
+                    setDialog("leave");
+                  }}
+                >
                   <Plus size={16} />
                   Ajukan cuti
                 </Button>
@@ -2170,7 +2303,11 @@ export default function HrisApp({ today }: { today: string }) {
                   <div
                     className="bar-chart"
                     role="img"
-                    aria-label="Ilustrasi ringkasan kehadiran mingguan"
+                    aria-label={
+                      live
+                        ? "Kehadiran tercatat tujuh hari terakhir"
+                        : "Ilustrasi ringkasan kehadiran mingguan"
+                    }
                   >
                     <div className="y-axis">
                       <span>100%</span>
@@ -2179,22 +2316,51 @@ export default function HrisApp({ today }: { today: string }) {
                       <span>25%</span>
                     </div>
                     <div className="chart-columns">
-                      {[84, 92, 88, 96, 90].map((v, i) => (
+                      {(live
+                        ? Array.from({ length: 7 }, (_, i) => {
+                            const day = offsetDate(today, i - 6);
+                            return Math.round(
+                              (100 *
+                                active.filter((p) =>
+                                  records.some(
+                                    (r) =>
+                                      r.employee === p.id &&
+                                      r.date === day &&
+                                      r.checkIn,
+                                  ),
+                                ).length) /
+                                Math.max(1, active.length),
+                            );
+                          })
+                        : [84, 92, 88, 96, 90]
+                      ).map((v, i) => (
                         <div className="chart-column" key={i}>
                           <div className="bars">
                             <div
                               style={{
                                 height:
-                                  (period === "Agustus 2026" ? v - 10 : v) +
-                                  "%",
+                                  (!live && period === "Agustus 2026"
+                                    ? v - 10
+                                    : v) + "%",
                               }}
                             />
-                            <div
-                              className="bar-pale"
-                              style={{ height: v - 9 + "%" }}
-                            />
+                            {!live && (
+                              <div
+                                className="bar-pale"
+                                style={{ height: v - 9 + "%" }}
+                              />
+                            )}
                           </div>
-                          <span>{["Sen", "Sel", "Rab", "Kam", "Jum"][i]}</span>
+                          <span>
+                            {live
+                              ? new Date(
+                                  offsetDate(today, i - 6) + "T12:00:00Z",
+                                ).toLocaleDateString("id-ID", {
+                                  weekday: "short",
+                                  timeZone: "Asia/Jakarta",
+                                })
+                              : ["Sen", "Sel", "Rab", "Kam", "Jum"][i]}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -2202,13 +2368,19 @@ export default function HrisApp({ today }: { today: string }) {
                   <div className="chart-legend">
                     <span>
                       <i />
-                      Minggu ini
+                      {live ? "7 hari terakhir" : "Minggu ini"}
                     </span>
-                    <span>
-                      <i className="pale" />
-                      Minggu lalu
-                    </span>
-                    <small>Ilustrasi data mingguan</small>
+                    {!live && (
+                      <span>
+                        <i className="pale" />
+                        Minggu lalu
+                      </span>
+                    )}
+                    <small>
+                      {live
+                        ? "Absensi tercatat / anggota aktif saat ini"
+                        : "Ilustrasi data mingguan"}
+                    </small>
                   </div>
                 </Panel>
                 <Panel title="Komposisi tim" action={<Building2 size={18} />}>
@@ -2305,7 +2477,7 @@ export default function HrisApp({ today }: { today: string }) {
                             <strong>{p.name}</strong>
                             <small>
                               {l.type} · {date(l.start)} ·{" "}
-                              {days(l.start, l.end)} hari
+                              {l.workingDays ?? days(l.start, l.end)} hari kerja
                             </small>
                           </div>
                           <Status value={l.status} />
@@ -2477,23 +2649,58 @@ export default function HrisApp({ today }: { today: string }) {
                       ? "Hari kerja selesai. Terima kasih!"
                       : checkIn
                         ? "Selamat bekerja, " + currentUser.name + "."
-                        : "Siap memulai hari Anda?"}
+                        : absenceReason || "Siap memulai hari Anda?"}
                   </h2>
                   <p>
-                    08.00 – 17.00 WIB ·{" "}
-                    {checkIn ? "Masuk " + checkIn : "Belum absen"}
+                    {live
+                      ? `${policy?.workStart ?? "—"} – ${policy?.workEnd ?? "—"}`
+                      : "08.00 – 17.00"}{" "}
+                    WIB · {checkIn ? "Masuk " + checkIn : "Belum absen"}
                     {checkOut ? " · Keluar " + checkOut : ""}
                   </p>
                 </div>
-                <Button onClick={attendance} disabled={!!checkOut}>
+                <Button
+                  onClick={attendance}
+                  disabled={
+                    !!checkOut ||
+                    attendanceBusy ||
+                    (live && !checkIn && !!absenceReason)
+                  }
+                >
                   <Clock3 size={17} />
                   {checkOut
                     ? "Absensi selesai"
                     : checkIn
                       ? "Absen keluar"
-                      : "Absen masuk"}
+                      : absenceReason || "Absen masuk"}
                 </Button>
               </div>
+              {live && (policyError || attendanceError) && (
+                <Panel>
+                  <p role="alert">{policyError || attendanceError}</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      void loadPolicy();
+                      void refreshAttendance(attendanceDate);
+                    }}
+                  >
+                    Coba kembali
+                  </Button>
+                </Panel>
+              )}
+              {live && (
+                <p className="muted">
+                  Lupa absen? Ajukan koreksi melalui{" "}
+                  <button
+                    className="text-link"
+                    onClick={() => go("selfservice")}
+                  >
+                    Layanan pribadi
+                  </button>
+                  . HR meninjau sebelum mengubah catatan.
+                </p>
+              )}
               <Panel
                 title="Catatan kehadiran"
                 action={
@@ -2540,22 +2747,19 @@ export default function HrisApp({ today }: { today: string }) {
                         </TableCell>
                         <TableCell>
                           <Status
-                            value={
-                              records.some(
+                            value={attendanceLabel(
+                              records.find(
                                 (r) =>
                                   r.employee === p.id &&
-                                  r.date === attendanceDate &&
-                                  r.checkIn,
-                              )
-                                ? records.find(
-                                    (r) =>
-                                      r.employee === p.id &&
-                                      r.date === attendanceDate,
-                                  )!.checkIn > "08:00"
-                                  ? "Terlambat"
-                                  : "Hadir"
-                                : "Belum absen"
-                            }
+                                  r.date === attendanceDate,
+                              ),
+                              p.status,
+                              approvedLeaveOn(p.id, attendanceDate)?.type,
+                              !live ||
+                                (!!policy &&
+                                  isWorkingDate(attendanceDate, policy)),
+                              live,
+                            )}
                           />
                         </TableCell>
                       </TableRow>
@@ -2570,20 +2774,72 @@ export default function HrisApp({ today }: { today: string }) {
               <div className="toolbar">
                 <Tabs value={filter} onValueChange={setFilter}>
                   <TabsList>
-                    {["Semua", "Menunggu", "Disetujui", "Ditolak"].map((v) => (
+                    {[
+                      "Semua",
+                      "Menunggu",
+                      "Disetujui",
+                      "Ditolak",
+                      ...(live ? ["Dibatalkan"] : []),
+                    ].map((v) => (
                       <TabsTrigger value={v} key={v}>
                         {v}
                       </TabsTrigger>
                     ))}
                   </TabsList>
                 </Tabs>
-                {role === "Karyawan" && (
+                {(live || role === "Karyawan") && (
                   <span className="muted">
                     Sisa cuti {remaining} hari kerja · termasuk reservasi
-                    menunggu
+                    menunggu {live ? `· tahun ${leaveYear}` : ""}
                   </span>
                 )}
               </div>
+              {live && (
+                <div className="toolbar">
+                  <label className="workflow-check">
+                    <input
+                      type="checkbox"
+                      checked={ownLeavesOnly}
+                      onChange={(e) => setOwnLeavesOnly(e.target.checked)}
+                    />{" "}
+                    Hanya pengajuan saya
+                  </label>
+                  <label>
+                    Tahun{" "}
+                    <Input
+                      aria-label="Tahun pengajuan"
+                      type="number"
+                      min={2000}
+                      max={2100}
+                      value={leaveYear}
+                      onChange={(e) => {
+                        const year = Number(e.target.value);
+                        if (
+                          Number.isInteger(year) &&
+                          year >= 2000 &&
+                          year <= 2100
+                        )
+                          setLeaveYear(year);
+                      }}
+                    />
+                  </label>
+                  <p className="muted">
+                    Manager: tim departemen, selain diri sendiri/Manager. HR:
+                    pengajuan Manager atau departemen tanpa Manager aktif.
+                  </p>
+                </div>
+              )}
+              {live && leaveErrorMessage && (
+                <div role="alert">
+                  <p>{leaveErrorMessage}</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => void refreshLeaves(leaveYear)}
+                  >
+                    Coba kembali
+                  </Button>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -2600,7 +2856,7 @@ export default function HrisApp({ today }: { today: string }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleLeaves
+                  {displayedLeaves
                     .filter((l) => filter === "Semua" || l.status === filter)
                     .map((l) => (
                       <TableRow key={l.id}>
@@ -2617,7 +2873,9 @@ export default function HrisApp({ today }: { today: string }) {
                             s.d. {date(l.end)}
                           </small>
                         </TableCell>
-                        <TableCell>{days(l.start, l.end)} hari</TableCell>
+                        <TableCell>
+                          {l.workingDays ?? days(l.start, l.end)} hari kerja
+                        </TableCell>
                         <TableCell>
                           <Status value={l.status} />
                           {l.approver && (
@@ -2632,12 +2890,13 @@ export default function HrisApp({ today }: { today: string }) {
                           )}
                         </TableCell>
                         <TableCell>
-                          {role === "Manager" &&
+                          {(live ? l.canDecide : role === "Manager") &&
                           l.employee !== currentUser.id &&
                           l.status === "Menunggu" ? (
                             <div className="inline-actions">
                               <Button
                                 size="sm"
+                                disabled={leaveBusy}
                                 onClick={() => approve(l.id, "Disetujui")}
                               >
                                 <Check size={14} />
@@ -2646,16 +2905,31 @@ export default function HrisApp({ today }: { today: string }) {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                disabled={leaveBusy}
                                 onClick={() => approve(l.id, "Ditolak")}
                               >
                                 <X size={14} />
                                 Tolak
                               </Button>
                             </div>
+                          ) : live &&
+                            l.employee === currentUser.id &&
+                            l.status === "Menunggu" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={leaveBusy}
+                              onClick={() => {
+                                setSelectedLeave(l.id);
+                                setDialog("cancel-leave");
+                              }}
+                            >
+                              Batalkan pengajuan
+                            </Button>
                           ) : (
                             <span className="muted">
                               {l.status === "Menunggu"
-                                ? "Menunggu manager"
+                                ? "Menunggu persetujuan"
                                 : "Selesai"}
                             </span>
                           )}
@@ -2664,7 +2938,7 @@ export default function HrisApp({ today }: { today: string }) {
                     ))}
                 </TableBody>
               </Table>
-              {!visibleLeaves.some(
+              {!displayedLeaves.some(
                 (l) => filter === "Semua" || l.status === filter,
               ) && (
                 <div className="empty">
@@ -2677,6 +2951,20 @@ export default function HrisApp({ today }: { today: string }) {
           )}
           {view === "payroll" && (
             <>
+              {live && (
+                <label className="workflow-check">
+                  Pilih bulan payroll{" "}
+                  <Input
+                    aria-label="Pilih bulan payroll"
+                    type="month"
+                    value={periodFromLabel(period)}
+                    onChange={(e) => {
+                      if (/^\d{4}-\d{2}$/.test(e.target.value))
+                        setPeriod(labelFromPeriod(e.target.value));
+                    }}
+                  />
+                </label>
+              )}
               <div className="toolbar plain">
                 <Choice
                   value={period}
@@ -3232,9 +3520,21 @@ export default function HrisApp({ today }: { today: string }) {
                 <Button variant="outline" onClick={() => setDialog("profile")}>
                   Edit kontak saya
                 </Button>
+                {live && (
+                  <Button variant="outline" onClick={() => go("selfservice")}>
+                    Slip pribadi, koreksi, dan password
+                  </Button>
+                )}
               </div>
             </Panel>
           )}
+          {live && session && view === "selfservice" && (
+            <PersonalServices session={session} today={today} />
+          )}
+          {live && role === "Admin HR" && view === "policy" && (
+            <PolicySettings onSaved={setPolicy} />
+          )}
+          {live && role === "Admin HR" && view === "audit" && <AuditLog />}
           <footer className="page-footer">
             <span>PeopleSpace · Human Resource Information System</span>
             <span>Capstone Project / 4E</span>
@@ -3260,6 +3560,8 @@ export default function HrisApp({ today }: { today: string }) {
                     payslip: "Slip gaji",
                     detail: "Detail karyawan",
                     notifications: "Notifikasi",
+                    "approve-leave": "Konfirmasi persetujuan",
+                    "cancel-leave": "Batalkan pengajuan?",
                     department: "Tambah departemen",
                     position: "Tambah jabatan",
                     help: "Pusat bantuan",
@@ -3279,6 +3581,49 @@ export default function HrisApp({ today }: { today: string }) {
                 : "Workspace demo · data contoh selama sesi ini."}
             </DialogDescription>
           </DialogHeader>
+          {dialog === "approve-leave" && (
+            <div>
+              <p>
+                Setujui pengajuan{" "}
+                {
+                  people.find(
+                    (p) =>
+                      p.id ===
+                      leaves.find((l) => l.id === selectedLeave)?.employee,
+                  )?.name
+                }
+                ? Pastikan tanggal dan alasan sudah diperiksa.
+              </p>
+              <Button
+                disabled={leaveBusy}
+                onClick={async () => {
+                  if (selectedLeave)
+                    await decideLeave(selectedLeave, "Disetujui");
+                  setDialog(null);
+                }}
+              >
+                Ya, setujui pengajuan
+              </Button>
+            </div>
+          )}
+          {dialog === "cancel-leave" && (
+            <div>
+              <p>
+                Hanya pengajuan yang masih menunggu dapat dibatalkan. Riwayat
+                tetap disimpan dan reservasi cuti tahunan dilepas.
+              </p>
+              <Button
+                variant="outline"
+                disabled={leaveBusy}
+                onClick={() => {
+                  const request = leaves.find((l) => l.id === selectedLeave);
+                  if (request) void cancelLeave(request);
+                }}
+              >
+                Ya, batalkan pengajuan
+              </Button>
+            </div>
+          )}
           {dialog === "publish-payroll" && (
             <div>
               <p>
@@ -3446,18 +3791,40 @@ export default function HrisApp({ today }: { today: string }) {
                   </label>
                   <label>
                     Status
-                    <select name="status" defaultValue={selected.status}>
+                    <select
+                      name="status"
+                      value={employeeStatusDraft}
+                      onChange={(e) => setEmployeeStatusDraft(e.target.value)}
+                    >
                       <option>Aktif</option>
                       <option>Nonaktif</option>
                     </select>
                   </label>
+                  {live &&
+                    selected.status === "Aktif" &&
+                    employeeStatusDraft === "Nonaktif" && (
+                      <label className="full workflow-check">
+                        <input
+                          name="offboardingConfirm"
+                          type="checkbox"
+                          required
+                        />{" "}
+                        Saya memahami karyawan ini tidak dapat mengakses
+                        aplikasi setelah dinonaktifkan. Riwayat dan slip terbit
+                        tetap disimpan.
+                      </label>
+                    )}
                 </>
               )}
               {dialog === "leave" && (
                 <>
                   <label className="full">
                     Jenis cuti
-                    <select name="type">
+                    <select
+                      name="type"
+                      value={leaveType}
+                      onChange={(e) => setLeaveType(e.target.value)}
+                    >
                       <option>Cuti tahunan</option>
                       <option>Izin</option>
                       <option>Sakit</option>
@@ -3465,16 +3832,42 @@ export default function HrisApp({ today }: { today: string }) {
                   </label>
                   <label>
                     Tanggal mulai
-                    <Input name="start" type="date" required min={today} />
+                    <Input
+                      name="start"
+                      type="date"
+                      required
+                      min={
+                        live && leaveType === "Sakit"
+                          ? offsetDate(today, -(policy?.sickBackdateDays ?? 0))
+                          : today
+                      }
+                    />
                   </label>
                   <label>
                     Tanggal selesai
-                    <Input name="end" type="date" required min={today} />
+                    <Input
+                      name="end"
+                      type="date"
+                      required
+                      min={
+                        live && leaveType === "Sakit"
+                          ? offsetDate(today, -(policy?.sickBackdateDays ?? 0))
+                          : today
+                      }
+                    />
                   </label>
                   <label className="full">
                     Alasan
                     <textarea name="reason" rows={3} required />
                   </label>
+                  {live && (
+                    <p className="full muted">
+                      Kuota memakai hari kerja dan kalender HR, bukan hari
+                      kalender. Sakit boleh dilaporkan maksimal{" "}
+                      {policy?.sickBackdateDays ?? 0} hari ke belakang; semua
+                      pengajuan tetap perlu persetujuan.
+                    </p>
+                  )}
                 </>
               )}
               {dialog === "reject" && (
@@ -3629,7 +4022,9 @@ export default function HrisApp({ today }: { today: string }) {
                   type="submit"
                   disabled={
                     live &&
-                    (accountBusy !== null || (dialog === "payroll" && payBusy))
+                    (accountBusy !== null ||
+                      leaveBusy ||
+                      (dialog === "payroll" && payBusy))
                   }
                 >
                   {dialog === "leave"

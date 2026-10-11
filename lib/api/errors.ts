@@ -6,6 +6,28 @@ const KNOWN: Record<
   string,
   { status: number; code: ApiErrorCode; message: string }
 > = {
+  NON_WORKING_DAY: {
+    status: 409,
+    code: "NON_WORKING_DAY",
+    message: "Hari ini bukan hari kerja menurut kebijakan HR.",
+  },
+  ON_APPROVED_LEAVE: {
+    status: 409,
+    code: "ON_APPROVED_LEAVE",
+    message:
+      "Absensi tidak dapat dicatat pada tanggal cuti/izin/sakit yang disetujui.",
+  },
+  ATTENDANCE_LEAVE_CONFLICT: {
+    status: 409,
+    code: "ATTENDANCE_LEAVE_CONFLICT",
+    message:
+      "Sudah ada absensi pada tanggal pengajuan. Tinjau catatannya sebelum menyetujui.",
+  },
+  DUPLICATE_CORRECTION: {
+    status: 409,
+    code: "DUPLICATE_CORRECTION",
+    message: "Masih ada koreksi menunggu untuk tanggal tersebut.",
+  },
   FORBIDDEN: {
     status: 403,
     code: "FORBIDDEN",

@@ -57,7 +57,12 @@ async function requestEnvelope<T>(
 
   if (!response.ok || !json || json.error) {
     if (
-      response.status === 401 &&
+      (response.status === 401 ||
+        [
+          "ACCOUNT_DISABLED",
+          "ACCOUNT_NOT_ACTIVE",
+          "EMPLOYEE_INACTIVE",
+        ].includes(json?.error?.code ?? "")) &&
       typeof window !== "undefined" &&
       path !== "/me" &&
       path !== "/auth/login"
@@ -145,7 +150,97 @@ export type DashboardDto = {
   reviewedEmployeeCount: number;
 };
 
+export type HrPolicy = {
+  workStart: string;
+  workEnd: string;
+  workingDays: number[];
+  holidayDates: string[];
+  defaultEntitlement: number;
+  sickBackdateDays: number;
+  version: number;
+};
+export type PersonalPayslip = PayrollItemDto & {
+  period: string;
+  publishedAt: string;
+};
+export type AttendanceCorrection = {
+  id: string;
+  employee_id: string;
+  work_date: string;
+  requested_in: string;
+  requested_out: string | null;
+  reason: string;
+  status: string;
+  decision_note: string | null;
+  version: number;
+  employees: { full_name: string } | null;
+};
+export type NotificationDto = {
+  id: string;
+  title: string;
+  message: string;
+  at: string;
+  view: string;
+  read: boolean;
+};
+export type AuditDto = {
+  id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  occurred_at: string;
+  actor_name: string | null;
+};
+
 export const hrApi = {
+  policy: () => request<HrPolicy>("/hr-policy"),
+  updatePolicy: (
+    body: Omit<HrPolicy, "version"> & { expectedVersion: number },
+  ) =>
+    request<HrPolicy>("/hr-policy", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  personalPayslips: () => list<PersonalPayslip>("/me/payslips"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request("/me/password", {
+      method: "PATCH",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  corrections: () => list<AttendanceCorrection>("/attendance-corrections"),
+  requestCorrection: (body: {
+    workDate: string;
+    checkIn: string;
+    checkOut: string;
+    reason: string;
+  }) =>
+    request("/attendance-corrections", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  decideCorrection: (
+    id: string,
+    decision: string,
+    note: string,
+    expectedVersion: number,
+  ) =>
+    request(`/attendance-corrections/${id}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision, note, expectedVersion }),
+    }),
+  notifications: () => request<NotificationDto[]>("/notifications"),
+  readNotifications: (ids: string[]) =>
+    request("/notifications", {
+      method: "PATCH",
+      body: JSON.stringify({ ids }),
+    }),
+  auditLog: (page: number) =>
+    request<AuditDto[]>(`/audit-log?page=${page}&pageSize=50`),
+  cancelLeave: (id: string, expectedVersion: number) =>
+    request<LeaveDto>(`/leave-requests/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion }),
+    }),
   login: (identifier: string, password: string) =>
     request<Me>("/auth/login", {
       method: "POST",

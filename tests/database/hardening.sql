@@ -11,7 +11,7 @@ begin
   begin execute statement; exception when others then code:=sqlerrm; end;
   perform pg_temp.check_result(label,code=expected or (expected='PERMISSION' and code like 'permission denied%'));
 end $$;
-grant all on pg_temp.regression_results to authenticated,service_role;
+grant all on pg_temp.regression_results to anon,authenticated,service_role;
 -- Only inside this rollback-only test transaction: normalize unrelated demo
 -- salaries so the publication tests isolate their own incomplete-salary cases.
 update private.employee_compensation c set base_salary_idr=1000000 from public.employees e
@@ -23,6 +23,8 @@ declare hr uuid; manager uuid; emp uuid; disabled uuid; invited uuid; inactive u
   account public.user_profiles; run public.payroll_runs; item public.payroll_items;
   leave_row public.leave_requests; review public.performance_reviews; employee public.employees;
   contact public.employee_contacts; salary bigint; v integer; claim jsonb;
+  manager_leave public.leave_requests; correction public.attendance_corrections; policy public.hr_policy;
+  correction_date date; today date:=(now() at time zone 'Asia/Jakarta')::date; notifications jsonb; initial_balance integer; other_actor uuid;
 begin
   select user_id into strict hr from public.user_profiles where employee_id=hr_id;
   select user_id into strict emp from public.user_profiles where employee_id=emp_id;
@@ -30,6 +32,7 @@ begin
   select user_id into strict disabled from public.user_profiles where account_status='DISABLED';
   select user_id into strict invited from public.user_profiles where account_status='INVITED';
   select user_id into strict inactive from public.user_profiles where employee_id='e0000000-0000-4000-8000-000000000008';
+  select user_id into strict other_actor from public.user_profiles where employee_id='e0000000-0000-4000-8000-000000000005';
   perform set_config('request.jwt.claim.sub',hr::text,true); execute 'set local role authenticated';
   perform pg_temp.check_result('HR compensation RPC',public.employee_compensation_for_hr(emp_id)>0);
   select public.write_master('positions',null,'Regression unused master',null) into claim;
@@ -117,16 +120,84 @@ begin
   perform pg_temp.expect_error('Overlap rejected','select public.create_leave_request(''SICK'',''2099-01-05'',''2099-01-05'',''Overlap'')','LEAVE_OVERLAP');
   perform pg_temp.expect_error('Quota enforced','select public.create_leave_request(''ANNUAL'',''2099-02-02'',''2099-02-27'',''Quota'')','LEAVE_BALANCE_EXCEEDED');
   perform set_config('request.jwt.claim.sub',manager::text,true);
-  perform pg_temp.check_result('Manager payroll hidden',(select count(*) from public.payroll_items)=0);
+  perform pg_temp.check_result('Manager payroll only own published',(select count(*) from public.payroll_items)>0 and
+    not exists(select 1 from public.payroll_items where employee_id<>private.current_employee_id() or status<>'PUBLISHED'));
   perform pg_temp.expect_error('Manager cannot read readiness',format('select public.payroll_run_readiness(%L)',run.id),'FORBIDDEN');
   perform pg_temp.expect_error('Manager cannot sync payroll',format('select public.sync_payroll_run(%L,%s)',run.id,run.version),'FORBIDDEN');
-  perform pg_temp.expect_error('Manager leave bypass denied','select public.create_leave_request(''PERMISSION'',''2099-01-05'',''2099-01-05'',''Bypass'')','FORBIDDEN');
+  select * into manager_leave from public.create_leave_request('PERMISSION','2099-01-05','2099-01-05','Manager personal leave');
+  perform pg_temp.check_result('Manager can request personal leave',manager_leave.employee_id=private.current_employee_id());
+  perform pg_temp.expect_error('Manager cannot approve self',format('select public.decide_leave_request(%L,''APPROVED'',null,%s)',manager_leave.id,manager_leave.version),'FORBIDDEN');
   perform public.decide_leave_request(leave_row.id,'REJECTED','Regression rollback',leave_row.version);
   perform pg_temp.check_result('Manager decision metadata',(select status='REJECTED' and decided_by=manager and decided_at is not null from public.leave_requests where id=leave_row.id));
   select * into review from public.upsert_performance_review(emp_id,'2099-12',80,'Regression rollback',null);
   perform public.upsert_performance_review(emp_id,'2099-12',81,'Updated regression',review.version);
   perform pg_temp.expect_error('Review stale version rejected',format('select public.upsert_performance_review(%L,''2099-12'',82,''Stale'',%s)',emp_id,review.version),'VERSION_CONFLICT');
   perform pg_temp.expect_error('Inactive review target denied','select public.upsert_performance_review(''e0000000-0000-4000-8000-000000000008'',''2099-12'',80,''Inactive'',null)','NOT_FOUND');
+  perform pg_temp.expect_error('Manager cannot change HR policy','select public.update_hr_policy(1,''08:00'',''17:00'',array[1,2,3,4,5],12,array[]::date[],7)','FORBIDDEN');
+  perform pg_temp.expect_error('Manager audit denied','select public.hr_audit_log()','FORBIDDEN');
+  perform set_config('request.jwt.claim.sub',hr::text,true);
+  perform public.decide_leave_request(manager_leave.id,'APPROVED',null,manager_leave.version);
+  perform pg_temp.check_result('HR decides manager personal leave',(select status='APPROVED' and decided_by=hr from public.leave_requests where id=manager_leave.id));
+  select * into manager_leave from public.create_leave_request('PERMISSION','2099-01-05','2099-01-05','HR personal leave');
+  perform pg_temp.expect_error('HR cannot approve self',format('select public.decide_leave_request(%L,''APPROVED'',null,%s)',manager_leave.id,manager_leave.version),'FORBIDDEN');
+  select * into policy from public.hr_policy where id=1;
+  select * into policy from public.update_hr_policy(policy.policy_version,'08:00','17:00',array[1,2,3,4,5],12,array[today],7);
+  perform pg_temp.check_result('HR policy versioned and saved',policy.holiday_dates=array[today]);
+  perform pg_temp.expect_error('Policy stale version rejected',format('select public.update_hr_policy(%s,''08:00'',''17:00'',array[1],12,array[]::date[],7)',policy.policy_version-1),'VERSION_CONFLICT');
+  perform pg_temp.expect_error('Invalid working day rejected',format('select public.update_hr_policy(%s,''08:00'',''17:00'',array[8],12,array[]::date[],7)',policy.policy_version),'VALIDATION_ERROR');
+  perform set_config('request.jwt.claim.sub',emp::text,true);
+  perform pg_temp.expect_error('Checkin rejects holiday','select public.attendance_check_in()','NON_WORKING_DAY');
+  perform pg_temp.expect_error('Employee audit denied','select public.hr_audit_log()','FORBIDDEN');
+  select available_days into initial_balance from public.leave_balance(emp_id,2099);
+  select * into manager_leave from public.create_leave_request('ANNUAL','2099-01-19','2099-01-19','Cancel pending regression');
+  perform pg_temp.check_result('Pending annual leave reserves quota',(select available_days from public.leave_balance(emp_id,2099))=initial_balance-manager_leave.working_days);
+  perform set_config('request.jwt.claim.sub',manager::text,true);
+  perform pg_temp.expect_error('Manager cannot cancel colleague leave',format('select public.cancel_leave_request(%L,%s)',manager_leave.id,manager_leave.version),'NOT_FOUND');
+  perform set_config('request.jwt.claim.sub',emp::text,true);
+  perform public.cancel_leave_request(manager_leave.id,manager_leave.version);
+  perform pg_temp.check_result('Cancel preserves history and releases quota',(select status='CANCELLED' and cancelled_at is not null from public.leave_requests where id=manager_leave.id) and
+    (select available_days from public.leave_balance(emp_id,2099))=initial_balance);
+  select * into manager_leave from public.create_leave_request('PERMISSION','2099-01-19','2099-01-19','Cancelled dates can be reused');
+  perform pg_temp.check_result('Cancelled does not overlap',manager_leave.status='PENDING');
+  perform set_config('request.jwt.claim.sub',hr::text,true);
+  perform pg_temp.expect_error('HR cannot bypass an available team manager',format('select public.decide_leave_request(%L,''APPROVED'',null,%s)',manager_leave.id,manager_leave.version),'FORBIDDEN');
+  perform set_config('request.jwt.claim.sub',other_actor::text,true);
+  select * into manager_leave from public.create_leave_request('PERMISSION','2099-01-05','2099-01-05','Department without manager');
+  perform set_config('request.jwt.claim.sub',hr::text,true);
+  perform public.decide_leave_request(manager_leave.id,'APPROVED',null,manager_leave.version);
+  perform pg_temp.check_result('HR fallback resolves department without manager',(select status='APPROVED' and decided_by=hr from public.leave_requests where id=manager_leave.id));
+  perform set_config('request.jwt.claim.sub',other_actor::text,true);
+  select version into v from public.leave_requests where id=manager_leave.id;
+  perform pg_temp.expect_error('Approved leave cannot be directly cancelled',format('select public.cancel_leave_request(%L,%s)',manager_leave.id,v),'LEAVE_ALREADY_DECIDED');
+  perform set_config('request.jwt.claim.sub',emp::text,true);
+  notifications:=public.my_notifications();
+  perform pg_temp.check_result('Notifications scoped to own published payroll',exists(select 1 from jsonb_array_elements(notifications) n where n->>'id' like 'payroll:%'));
+  perform public.read_my_notifications(array[(notifications->0)->>'id']);
+  perform pg_temp.check_result('Notification read receipt saved',exists(select 1 from jsonb_array_elements(public.my_notifications()) n where n->>'id'=((notifications->0)->>'id') and (n->>'read')::boolean));
+  -- Corrections use real dates but all mutations are rolled back with this transaction.
+  select max(d::date) into correction_date from generate_series(today-30,today-1,interval '1 day') d
+    where extract(isodow from d) between 1 and 5 and not exists(select 1 from public.leave_requests l where l.employee_id=emp_id and l.status='APPROVED' and d::date between l.start_date and l.end_date);
+  select * into correction from public.request_attendance_correction(correction_date,'08:00:30','17:00','Regression forgotten attendance');
+  perform pg_temp.check_result('Correction pending does not change attendance',correction.status='PENDING');
+  perform pg_temp.expect_error('Duplicate pending correction denied',format('select public.request_attendance_correction(%L,''08:00'',''17:00'',''Duplicate'')',correction_date),'DUPLICATE_CORRECTION');
+  perform pg_temp.expect_error('Employee cannot approve correction',format('select public.decide_attendance_correction(%L,''APPROVED'',''Review'',%s)',correction.id,correction.version),'FORBIDDEN');
+  perform set_config('request.jwt.claim.sub',hr::text,true);
+  perform public.decide_attendance_correction(correction.id,'APPROVED','Checked regression',correction.version);
+  perform pg_temp.check_result('HR approved correction retains seconds and status',(select status='LATE' and check_in_at=(correction_date+time '08:00:30') at time zone 'Asia/Jakarta' from public.attendances where employee_id=emp_id and work_date=correction_date));
+  perform pg_temp.expect_error('Correction stale decision rejected',format('select public.decide_attendance_correction(%L,''REJECTED'',''Stale'',%s)',correction.id,correction.version),'VERSION_CONFLICT');
+  perform pg_temp.check_result('HR audit is read-only and populated',jsonb_array_length(public.hr_audit_log())>0);
+  select * into correction from public.request_attendance_correction(correction_date,'08:00','17:00','HR own correction');
+  perform pg_temp.expect_error('HR cannot approve own correction',format('select public.decide_attendance_correction(%L,''APPROVED'',''Review'',%s)',correction.id,correction.version),'FORBIDDEN');
+  perform set_config('request.jwt.claim.sub',emp::text,true);
+  select * into correction from public.request_attendance_correction(correction_date,'08:00','17:00','Concurrent attendance regression');
+  execute 'reset role';
+  update public.attendances set updated_at=now() where employee_id=emp_id and work_date=correction_date;
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claim.sub',hr::text,true);
+  perform pg_temp.expect_error('Changed attendance cannot be overwritten by stale correction',format('select public.decide_attendance_correction(%L,''APPROVED'',''Review'',%s)',correction.id,correction.version),'VERSION_CONFLICT');
+  execute 'set local role anon';
+  perform pg_temp.expect_error('Anonymous notifications RPC denied','select public.my_notifications()','PERMISSION');
+  execute 'set local role authenticated';
   foreach emp in array array[disabled,invited,inactive] loop
     perform set_config('request.jwt.claim.sub',emp::text,true);
     perform pg_temp.check_result('Inactive actor directory hidden: '||emp::text,(select count(*) from public.employees)=0);

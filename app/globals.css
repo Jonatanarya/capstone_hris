@@ -1,5 +1,120 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+
+.workflow-stack {
+  display: grid;
+  gap: 24px;
+}
+.workflow-stack .empty > svg {
+  margin: 0 auto 12px;
+}
+.workflow-stack .panel > .muted,
+.workflow-stack .panel > [role="alert"] {
+  margin-bottom: 20px;
+  line-height: 1.7;
+}
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.panel-heading h2 {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+.workflow-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0;
+}
+.workflow-form label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: #66738c;
+}
+.workflow-form label.workflow-check,
+.workflow-check {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.workflow-form textarea {
+  width: 100%;
+}
+.workflow-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 12px 0;
+}
+.workflow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+}
+.workflow-row p,
+.workflow-card p {
+  font-size: 13px;
+  color: #66738c;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.workflow-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 14px 0;
+  overflow-wrap: anywhere;
+}
+.workflow-notifications {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.notification-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  border-radius: 100px;
+  background: #5d76d8;
+  color: white;
+  padding: 2px 5px;
+  font-size: 10px;
+}
+.icon-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+.text-link {
+  color: #516bce;
+  text-decoration: underline;
+}
+@media (max-width: 600px) {
+  .workflow-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workflow-form .full {
+    grid-column: 1;
+  }
+  .workflow-row {
+    align-items: flex-start;
+  }
+}
 @font-face {
   font-family: Inter;
   font-style: normal;

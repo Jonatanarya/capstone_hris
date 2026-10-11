@@ -5,7 +5,7 @@ import { leaveDto, isUuid, type LeaveRow } from "@/lib/api/dto";
 import { pagination, requireEnum } from "@/lib/api/query";
 import { toApiError } from "@/lib/api/errors";
 
-const STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+const STATUSES = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
 const TYPES = ["ANNUAL", "PERMISSION", "SICK"] as const;
 
 export async function GET(request: Request) {
@@ -50,8 +50,27 @@ export async function GET(request: Request) {
 
     const { data, error, count } = await query;
     if (error) throw toApiError(error);
+    const rows = data as unknown as LeaveRow[];
+    const { data: actions, error: actionsError } = rows.length
+      ? await supabase.rpc("leave_request_actions", {
+          p_ids: rows.map((r) => r.id),
+        })
+      : { data: [], error: null };
+    if (actionsError) throw toApiError(actionsError);
+    const metadata = new Map<
+      string,
+      { canDecide: boolean; decidedByName: string | null }
+    >(
+      (actions ?? []).map(
+        (a: {
+          id: string;
+          canDecide: boolean;
+          decidedByName: string | null;
+        }) => [a.id, a],
+      ),
+    );
     return listOk(
-      (data as unknown as LeaveRow[]).map(leaveDto),
+      rows.map((row) => ({ ...leaveDto(row), ...metadata.get(row.id) })),
       page,
       pageSize,
       count ?? 0,
@@ -64,7 +83,6 @@ export async function POST(request: Request) {
     const supabase = await createSupabaseServerClient();
     const actor = await getActor(supabase);
     assertActive(actor);
-    if (actor.role !== "EMPLOYEE") throw api.forbidden();
 
     const body = (await readJson(request)) as Record<string, unknown>;
     const allowed = new Set(["type", "startDate", "endDate", "reason"]);

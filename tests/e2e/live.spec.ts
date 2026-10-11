@@ -53,6 +53,7 @@ async function loginWithMocks(
   brokenDetail = false,
   identifier = "nadia@example.test",
   payrollFixture?: PayrollFixture,
+  businessRole: "ADMIN_HR" | "MANAGER" | "EMPLOYEE" = "ADMIN_HR",
 ) {
   let signed = false;
   let payrollPublished = payrollFixture?.published ?? false;
@@ -69,12 +70,23 @@ async function loginWithMocks(
     if (path === "/me" || path === "/auth/login") {
       data = {
         userId: "hr-user",
-        role: "ADMIN_HR",
+        role: businessRole,
         accountStatus: "ACTIVE",
-        employee: hr,
+        employee: businessRole === "ADMIN_HR" ? hr : member,
       };
       if (!signed) status = 401;
-    } else if (path === "/employees") data = [summary(hr), summary(member)];
+    } else if (path === "/me/leave-balance") data = { availableDays: 12 };
+    else if (path === "/hr-policy")
+      data = {
+        workStart: "08:00",
+        workEnd: "17:00",
+        workingDays: [1, 2, 3, 4, 5],
+        holidayDates: [],
+        defaultEntitlement: 12,
+        sickBackdateDays: 7,
+        version: 1,
+      };
+    else if (path === "/employees") data = [summary(hr), summary(member)];
     else if (path.startsWith("/employees/")) {
       data = path.endsWith(member.id) ? member : hr;
       if (payrollFixture && path.endsWith(member.id))
@@ -520,4 +532,265 @@ test("default invite bridge sends tokens only to same-origin server and surfaces
   expect(
     await page.evaluate(() => localStorage.length + sessionStorage.length),
   ).toBe(0);
+});
+
+for (const role of ["ADMIN_HR", "MANAGER", "EMPLOYEE"] as const) {
+  test(`${role} has personal payroll, correction and optional password services`, async ({
+    page,
+  }) => {
+    await loginWithMocks(page, false, "nadia@example.test", undefined, role);
+    await navigate(page, "Layanan pribadi");
+    await expect(
+      page.getByRole("heading", { name: "Layanan pribadi", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Belum ada slip gaji pribadi", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Ajukan koreksi", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByLabel("Password saat ini", { exact: true }),
+    ).toBeVisible();
+    if (role !== "ADMIN_HR")
+      await expect(
+        page
+          .locator('[data-sidebar="menu-button"]')
+          .getByText("Kebijakan HR", { exact: true }),
+      ).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+      ),
+    ).toBe(true);
+  });
+}
+
+test("manager can create and explicitly cancel own pending leave", async ({
+  page,
+}) => {
+  await loginWithMocks(page, false, "nadia@example.test", undefined, "MANAGER");
+  let created = false,
+    cancelled = false,
+    cancelCount = 0;
+  const leave = {
+    id: "a0000000-0000-4000-8000-000000000009",
+    employeeId: member.id,
+    type: "ANNUAL",
+    startDate: "2099-01-05",
+    endDate: "2099-01-05",
+    workingDays: 1,
+    reason: "Keperluan demo",
+    status: "PENDING",
+    canDecide: false,
+    version: 1,
+  };
+  await page.route("**/api/v1/leave-requests**", async (route) => {
+    if (route.request().url().includes("/cancel")) {
+      expect(route.request().postDataJSON()).toEqual({ expectedVersion: 1 });
+      cancelled = true;
+      cancelCount++;
+    } else if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        type: "ANNUAL",
+        startDate: "2099-01-05",
+        endDate: "2099-01-05",
+        reason: "Keperluan demo",
+      });
+      created = true;
+    }
+    const data =
+      route.request().method() === "GET"
+        ? created
+          ? [{ ...leave, status: cancelled ? "CANCELLED" : "PENDING" }]
+          : []
+        : leave;
+    await route.fulfill({ json: { data, meta: { totalPages: 1 } } });
+  });
+  await navigate(page, "Pengajuan cuti");
+  await page.getByRole("button", { name: "Ajukan cuti", exact: true }).click();
+  await page.getByLabel("Tanggal mulai", { exact: true }).fill("2099-01-05");
+  await page.getByLabel("Tanggal selesai", { exact: true }).fill("2099-01-05");
+  await page.getByLabel("Alasan", { exact: true }).fill("Keperluan demo");
+  await page
+    .getByRole("button", { name: "Kirim pengajuan", exact: true })
+    .click();
+  const row = page.getByRole("row").filter({ hasText: "Keperluan demo" });
+  await expect(
+    row.getByRole("button", { name: "Setujui", exact: true }),
+  ).toHaveCount(0);
+  await row
+    .getByRole("button", { name: "Batalkan pengajuan", exact: true })
+    .click();
+  expect(cancelCount).toBe(0);
+  await page
+    .getByRole("button", { name: "Ya, batalkan pengajuan", exact: true })
+    .click();
+  await expect(row.getByText("Dibatalkan", { exact: true })).toBeVisible();
+  expect(cancelCount).toBe(1);
+});
+
+test("HR fallback approval requires confirmation and shows actual reviewer", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  let decided = false;
+  await page.route("**/api/v1/leave-requests**", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        decision: "APPROVED",
+        expectedVersion: 1,
+      });
+      decided = true;
+    }
+    const row = {
+      id: "a0000000-0000-4000-8000-000000000009",
+      employeeId: member.id,
+      type: "ANNUAL",
+      startDate: "2099-01-05",
+      endDate: "2099-01-05",
+      workingDays: 1,
+      reason: "Cuti manager",
+      status: decided ? "APPROVED" : "PENDING",
+      canDecide: !decided,
+      version: 1,
+      decidedByName: decided ? "Reviewer HR demo" : null,
+    };
+    await route.fulfill({
+      json: {
+        data: route.request().method() === "GET" ? [row] : row,
+        meta: { totalPages: 1 },
+      },
+    });
+  });
+  await navigate(page, "Pengajuan cuti");
+  await page
+    .getByRole("row")
+    .filter({ hasText: "Cuti manager" })
+    .getByRole("button", { name: "Setujui", exact: true })
+    .click();
+  expect(decided).toBe(false);
+  await page
+    .getByRole("button", { name: "Ya, setujui pengajuan", exact: true })
+    .click();
+  await expect(page.getByText(/Reviewer HR demo/)).toBeVisible();
+  expect(decided).toBe(true);
+});
+
+test("attendance uses seconds-aware server status and disables holiday checkin", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  await page.route("**/api/v1/hr-policy", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          workStart: "08:00",
+          workEnd: "17:00",
+          workingDays: [],
+          holidayDates: [],
+          defaultEntitlement: 12,
+          sickBackdateDays: 7,
+          version: 1,
+        },
+        meta: {},
+      },
+    }),
+  );
+  await page.route("**/api/v1/attendance?**", (route) => {
+    const day = new URL(route.request().url()).searchParams.get("date");
+    return route.fulfill({
+      json: {
+        data: [
+          {
+            id: "a",
+            employeeId: member.id,
+            workDate: day,
+            checkInAt: `${day}T01:00:30Z`,
+            checkOutAt: null,
+            status: "LATE",
+            version: 1,
+          },
+        ],
+        meta: { totalPages: 1 },
+      },
+    });
+  });
+  // Force policy reload through a new signed session; do not mutate production settings.
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Notifikasi", exact: true }),
+  ).toBeVisible();
+  await navigate(page, "Absensi");
+  await expect(
+    page.getByRole("button", { name: "Hari libur", exact: true }),
+  ).toBeDisabled();
+  const row = page.getByRole("row").filter({ hasText: "Dimas Saputra" });
+  await expect(row.getByText("08:00", { exact: true })).toBeVisible();
+  await expect(row.getByText("Terlambat", { exact: true })).toBeVisible();
+});
+
+test("notifications persist a read action and navigate to the related service", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  let read = false;
+  await page.route("**/api/v1/notifications", async (route) => {
+    if (route.request().method() === "PATCH") {
+      expect(route.request().postDataJSON()).toEqual({
+        ids: ["payroll:own-item"],
+      });
+      read = true;
+    }
+    await route.fulfill({
+      json: {
+        data: [
+          {
+            id: "payroll:own-item",
+            title: "Slip gaji tersedia",
+            message: "Oktober 2026",
+            at: "2026-10-10T02:00:00Z",
+            view: "selfservice",
+            read,
+          },
+        ],
+        meta: {},
+      },
+    });
+  });
+  await page.getByRole("button", { name: "Notifikasi", exact: true }).click();
+  await page.getByRole("button", { name: /Slip gaji tersedia/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Layanan pribadi", exact: true }),
+  ).toBeVisible();
+  expect(read).toBe(true);
+});
+
+test("HR policy and audit screens provide real API loading and retry", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  await navigate(page, "Kebijakan HR");
+  await expect(page.getByLabel("Jam mulai", { exact: true })).toHaveValue(
+    "08:00",
+  );
+  await expect(
+    page.getByRole("button", { name: "Simpan kebijakan", exact: true }),
+  ).toBeVisible();
+  await page.route("**/api/v1/audit-log?**", (route) =>
+    route.fulfill({
+      status: 503,
+      json: {
+        error: { code: "SERVICE_UNAVAILABLE", message: "Audit tidak tersedia" },
+        meta: {},
+      },
+    }),
+  );
+  await navigate(page, "Riwayat aktivitas");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Audit tidak tersedia" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Coba kembali", exact: true }),
+  ).toBeVisible();
 });
