@@ -2,6 +2,8 @@
 
 Versi usulan: **1.0 — 4 Oktober 2026**. Untuk Kelompok Capstone Project HRIS, kelas 4E.
 
+**Pembaruan 11 Oktober 2026:** paragraf status dan kontrak v1 di bawah adalah rancangan historis. Aplikasi kini live di Vercel/Supabase, migrasi sampai 0012 sudah diterapkan, dan KPI bulanan berbobot draf/final sudah tersedia. Gunakan [panduan demo terbaru](../DEMO_CAPSTONE.md), [PRD FR46–FR54](../Perencanaan_HRIS_Final_v2.md), serta route/RPC aktif sebagai acuan integrasi; jangan menjalankan reset/seed ulang dari instruksi historis.
+
 **Mulai membaca dari file ini.** Paket ini adalah spesifikasi kerja bersama, bukan backend yang sudah berjalan. Sebagian sudah diimplementasikan sebagai kode di repository ini (lihat [Implementasi backend](06_IMPLEMENTATION.md)); migration belum diterapkan ke project Supabase nyata karena menunggu kredensial, dan frontend masih memakai data fiktif di memori.
 
 ## 1. Acuan dan urutan baca

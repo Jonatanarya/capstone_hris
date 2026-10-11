@@ -42,6 +42,9 @@ import { GET as payslips } from "../app/api/v1/me/payslips/route";
 import { PATCH as policy } from "../app/api/v1/hr-policy/route";
 import { POST as correctionDecision } from "../app/api/v1/attendance-corrections/[id]/decision/route";
 import { POST as cancel } from "../app/api/v1/leave-requests/[id]/cancel/route";
+import { PUT as saveKpi, GET as kpis } from "../app/api/v1/kpis/route";
+import { POST as publishKpi } from "../app/api/v1/kpis/[id]/publish/route";
+import { kpiTemplate } from "../lib/kpi";
 const id = "a0000000-0000-4000-8000-000000000001";
 const context = { params: Promise.resolve({ id }) };
 const req = (body: unknown) =>
@@ -71,6 +74,83 @@ beforeEach(() => {
   mock.query.range.mockResolvedValue({ data: [], error: null, count: 0 });
 });
 describe("personal and HR workflow routes", () => {
+  it.each(["EMPLOYEE", "ADMIN_HR"])(
+    "%s cannot save or publish KPI",
+    async (role) => {
+      mock.actor.mockResolvedValue({
+        role,
+        accountStatus: "ACTIVE",
+        employeeStatus: "ACTIVE",
+        employeeId: id,
+      });
+      expect((await saveKpi(req({}))).status).toBe(403);
+      expect((await publishKpi(req({}), context)).status).toBe(403);
+      expect(mock.rpc).not.toHaveBeenCalled();
+    },
+  );
+  it("employee KPI list explicitly scopes own published only", async () => {
+    expect(
+      (await kpis(new Request("https://hris.test/api/v1/kpis?period=2026-10")))
+        .status,
+    ).toBe(200);
+    expect(mock.query.eq).toHaveBeenCalledWith("employee_id", id);
+    expect(mock.query.eq).toHaveBeenCalledWith("status", "PUBLISHED");
+  });
+  it("manager saves draft with strict version and no client score", async () => {
+    mock.actor.mockResolvedValue({
+      role: "MANAGER",
+      accountStatus: "ACTIVE",
+      employeeStatus: "ACTIVE",
+      employeeId: id,
+    });
+    const body = {
+      employeeId: id,
+      period: "2026-10",
+      indicators: kpiTemplate(),
+      notes: "",
+      expectedVersion: null,
+    };
+    expect((await saveKpi(req({ ...body, score: 100 }))).status).toBe(422);
+    expect((await saveKpi(req({ ...body, expectedVersion: "1" }))).status).toBe(
+      422,
+    );
+    expect((await saveKpi(req(body))).status).toBe(200);
+    expect(mock.rpc).toHaveBeenCalledWith("save_kpi", {
+      p_employee_id: id,
+      p_period: "2026-10",
+      p_indicators: body.indicators,
+      p_notes: "",
+      p_expected_version: null,
+    });
+  });
+  it("publish requires explicit review version and maps immutable final errors", async () => {
+    mock.actor.mockResolvedValue({
+      role: "MANAGER",
+      accountStatus: "ACTIVE",
+      employeeStatus: "ACTIVE",
+      employeeId: id,
+    });
+    expect(
+      (await publishKpi(req({ expectedVersion: 1 }), context)).status,
+    ).toBe(422);
+    mock.rpc.mockResolvedValue({
+      data: null,
+      error: { message: "KPI_FINALIZED" },
+    });
+    expect(
+      (
+        await publishKpi(
+          req({ expectedVersion: 1, expectedReviewVersion: null }),
+          context,
+        )
+      ).status,
+    ).toBe(409);
+    expect(mock.rpc).toHaveBeenCalledWith("publish_kpi", {
+      p_id: id,
+      p_expected_version: 1,
+      p_expected_review_version: null,
+    });
+  });
   it("changes own password only after verifying current credentials", async () => {
     expect(
       (

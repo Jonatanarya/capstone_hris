@@ -1,3 +1,4 @@
+import type { KpiDto, KpiIndicator } from "./kpi";
 import type {
   AccountDto,
   AttendanceDto,
@@ -363,6 +364,23 @@ export const hrApi = {
   payslip: (id: string) => request(`/payroll-items/${id}/payslip`),
   performanceReviews: (period: string) =>
     list<ReviewDto>("/performance-reviews", { period }),
+  kpis: (period: string) => list<KpiDto>("/kpis", { period }),
+  saveKpi: (body: {
+    employeeId: string;
+    period: string;
+    indicators: KpiIndicator[];
+    notes: string;
+    expectedVersion: number | null;
+  }) => request<KpiDto>("/kpis", { method: "PUT", body: JSON.stringify(body) }),
+  publishKpi: (
+    id: string,
+    expectedVersion: number,
+    expectedReviewVersion: number | null,
+  ) =>
+    request<KpiDto>(`/kpis/${id}/publish`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion, expectedReviewVersion }),
+    }),
   upsertReview: (
     employeeId: string,
     period: string,

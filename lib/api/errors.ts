@@ -6,6 +6,12 @@ const KNOWN: Record<
   string,
   { status: number; code: ApiErrorCode; message: string }
 > = {
+  KPI_FINALIZED: {
+    status: 409,
+    code: "KPI_FINALIZED",
+    message:
+      "KPI sudah final. Nilai dan indikator tidak dapat diubah lagi pada periode ini.",
+  },
   NON_WORKING_DAY: {
     status: 409,
     code: "NON_WORKING_DAY",

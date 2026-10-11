@@ -82,4 +82,4 @@ Dialog cetak PDF memakai fitur cetak browser; hasil cetak lintas browser belum t
 
 ## Handoff untuk teman backend
 
-[Paket handoff Supabase](docs/backend-handoff/README.md) merupakan rancangan awal v1 dan tidak semuanya mencerminkan implementasi terbaru. Kontrak tambahan, batas role, migrasi 0010–0011, dan skenario UAT terbaru tercatat di [panduan demo](docs/DEMO_CAPSTONE.md). Sumber implementasi aktif adalah route `/api/v1`, migrasi Supabase, dan tes regresi.
+[Paket handoff Supabase](docs/backend-handoff/README.md) merupakan rancangan awal v1 dan tidak semuanya mencerminkan implementasi terbaru. Kontrak tambahan, batas role, migrasi 0010–0012 (termasuk KPI bulanan berbobot draf/final), dan skenario UAT terbaru tercatat di [panduan demo](docs/DEMO_CAPSTONE.md). Sumber implementasi aktif adalah route `/api/v1`, migrasi Supabase, dan tes regresi.

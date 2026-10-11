@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { kpiTemplate, kpiScore, type KpiDto } from "../../lib/kpi";
 const hr = {
   id: "e0000000-0000-4000-8000-000000000001",
   employeeNo: "EMP-001",
@@ -792,5 +793,255 @@ test("HR policy and audit screens provide real API loading and retry", async ({
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Coba kembali", exact: true }),
+  ).toBeVisible();
+});
+
+test("manager composes weighted KPI, saves draft and finalizes with explicit review replacement", async ({
+  page,
+}) => {
+  await loginWithMocks(page, false, "dimas@example.test", undefined, "MANAGER");
+  const target = {
+    ...member,
+    id: "e0000000-0000-4000-8000-000000000002",
+    fullName: "Jonatan Arya Santosa",
+  };
+  await page.route("**/api/v1/employees?**", (route) =>
+    route.fulfill({
+      json: {
+        data: [summary(member), summary(target)],
+        meta: { totalPages: 1 },
+      },
+    }),
+  );
+  let row: KpiDto | null = null;
+  let publishes = 0;
+  await page.route("**/api/v1/kpis**", async (route) => {
+    const request = route.request();
+    if (request.method() === "PUT") {
+      const body = request.postDataJSON();
+      expect(body.employeeId).toBe(target.id);
+      expect(body.expectedVersion).toBeNull();
+      expect(body.indicators.map((i: { actual: number }) => i.actual)).toEqual([
+        80, 90, 100,
+      ]);
+      row = {
+        id: "a0000000-0000-4000-8000-000000000001",
+        employeeId: target.id,
+        employeeName: target.fullName,
+        period: body.period,
+        indicators: body.indicators,
+        notes: body.notes,
+        status: "DRAFT",
+        score: null,
+        version: 1,
+        publishedAt: null,
+      };
+      await route.fulfill({ json: { data: row, meta: {} } });
+      return;
+    }
+    if (request.method() === "POST") {
+      expect(request.postDataJSON()).toEqual({
+        expectedVersion: 1,
+        expectedReviewVersion: 3,
+      });
+      publishes++;
+      if (publishes === 1) {
+        await route.fulfill({
+          status: 409,
+          json: {
+            error: {
+              code: "VERSION_CONFLICT",
+              message: "Data telah berubah, muat ulang",
+            },
+            meta: {},
+          },
+        });
+        return;
+      }
+      row = {
+        ...row!,
+        status: "PUBLISHED",
+        version: 2,
+        score: kpiScore(row!.indicators),
+        publishedAt: "2026-10-11T06:00:00Z",
+      };
+      await route.fulfill({ json: { data: row, meta: {} } });
+      return;
+    }
+    await route.fulfill({
+      json: { data: row ? [row] : [], meta: { totalPages: 1 } },
+    });
+  });
+  await page.route("**/api/v1/performance-reviews?**", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          {
+            id: "review1",
+            employeeId: target.id,
+            period: "2026-10",
+            score: row?.score ?? 50,
+            notes: "Review",
+            version: 3,
+            assessedAt: "2026-10-01T00:00:00Z",
+            kpiId: row?.status === "PUBLISHED" ? row.id : null,
+          },
+        ],
+        meta: { totalPages: 1 },
+      },
+    }),
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Notifikasi", exact: true }),
+  ).toBeVisible();
+  await navigate(page, "KPI");
+  await page.getByRole("button", { name: "Susun KPI", exact: true }).click();
+  await expect(page.getByLabel("Karyawan KPI", { exact: true })).toHaveValue(
+    target.id,
+  );
+  await page.getByLabel("Bobot 1", { exact: true }).fill("49");
+  await expect(
+    page.getByRole("button", { name: "Simpan draf KPI", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Bobot 1", { exact: true }).fill("50");
+  for (const [i, actual] of [
+    [1, 80],
+    [2, 90],
+    [3, 100],
+  ])
+    await page
+      .getByLabel(`Realisasi ${i}`, { exact: true })
+      .fill(String(actual));
+  await expect(
+    page.getByText("Pratinjau nilai: 87", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("kpi-editor.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Simpan draf KPI", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Tutup editor", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Terbitkan KPI", exact: true })
+    .click();
+  await expect(page.getByText(/Penilaian lama 50\/100/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Ya, terbitkan KPI final", exact: true })
+    .click();
+  await expect(
+    page.getByText("Data telah berubah, muat ulang", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Terbitkan KPI", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Ya, terbitkan KPI final", exact: true })
+    .click();
+  await expect(page.locator(".kpi-badge.final")).toHaveText("Final");
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await page.screenshot({
+    path: test.info().outputPath("kpi-final.png"),
+    fullPage: true,
+  });
+  await expect(
+    page.getByRole("button", { name: "Edit draf KPI", exact: true }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    ),
+  ).toBe(true);
+  await navigate(page, "Penilaian kinerja");
+  await expect(
+    page.getByRole("button", { name: "Lihat KPI final", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Beri penilaian", exact: true }),
+  ).toHaveCount(0);
+});
+
+for (const role of ["EMPLOYEE", "ADMIN_HR"] as const)
+  test(`${role} reads KPI details without editing controls`, async ({
+    page,
+  }) => {
+    await loginWithMocks(
+      page,
+      false,
+      role === "EMPLOYEE" ? "dimas@example.test" : "nadia@example.test",
+      undefined,
+      role,
+    );
+    await page.route("**/api/v1/kpis?**", (route) =>
+      route.fulfill({
+        json: {
+          data: [
+            {
+              id: "kpi1",
+              employeeId: member.id,
+              employeeName: member.fullName,
+              period: "2026-10",
+              indicators: kpiTemplate().map((i) => ({ ...i, actual: 100 })),
+              notes: "Hasil evaluasi demo",
+              status: "PUBLISHED",
+              score: 100,
+              version: 2,
+              publishedAt: "2026-10-11T06:00:00Z",
+            },
+          ],
+          meta: { totalPages: 1 },
+        },
+      }),
+    );
+    await navigate(page, "KPI");
+    await expect(
+      page.getByText("Hasil evaluasi demo", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("Sangat baik", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Susun KPI", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Edit draf KPI", exact: true }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+      ),
+    ).toBe(true);
+  });
+
+test("KPI load failure is explicit and retryable", async ({ page }) => {
+  await loginWithMocks(page);
+  let failed = true;
+  await page.route("**/api/v1/kpis?**", (route) =>
+    route.fulfill(
+      failed
+        ? {
+            status: 503,
+            json: {
+              error: {
+                code: "SERVICE_UNAVAILABLE",
+                message: "KPI tidak tersedia",
+              },
+              meta: {},
+            },
+          }
+        : { json: { data: [], meta: { totalPages: 1 } } },
+    ),
+  );
+  await navigate(page, "KPI");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "KPI tidak tersedia" }),
+  ).toBeVisible();
+  failed = false;
+  await page.getByRole("button", { name: "Coba kembali", exact: true }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Belum ada KPI pada periode ini",
+      exact: true,
+    }),
   ).toBeVisible();
 });

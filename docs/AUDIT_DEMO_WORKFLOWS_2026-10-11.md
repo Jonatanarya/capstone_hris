@@ -1,5 +1,7 @@
 # Audit alur demo HRIS — 11 Oktober 2026
 
+Catatan ini mencatat baseline sebelum tambahan KPI. Alur KPI draf/final kini sudah diimplementasikan; bukti terbaru dan batasan ada di [audit KPI](AUDIT_KPI_2026-10-11.md). CI/CD baseline commit b079216 telah berhasil; smoke test tiga role pada URL produksi berhasil tanpa JavaScript error.
+
 ## Cakupan implementasi
 
 Layanan pribadi semua role, persetujuan cuti/fallback HR tanpa self-approval, pembatalan pending dengan history dan quota release, kalender/kebijakan HR, status presensi server, koreksi absensi terotorisasi, password pribadi opsional, read receipt notifikasi, audit read-only, dan konfirmasi penonaktifan. Panduan serta batas lingkup: [DEMO_CAPSTONE.md](DEMO_CAPSTONE.md). PRD ditambah FR46–FR53; gambar UML belum diedit.

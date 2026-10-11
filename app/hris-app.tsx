@@ -84,6 +84,7 @@ import {
   payrollError,
 } from "@/lib/hris";
 import { isLiveMode } from "@/lib/api-mode";
+import { KpiWorkflows } from "./kpi-workflows";
 import { payrollNet, salaryConfigured } from "@/lib/payroll";
 import { attendanceLabel, isWorkingDate, offsetDate } from "@/lib/workflows";
 import {
@@ -215,6 +216,7 @@ const menu = [
   { id: "leave", label: "Pengajuan cuti", icon: CalendarDays },
   { id: "payroll", label: "Payroll", icon: Wallet },
   { id: "performance", label: "Penilaian kinerja", icon: ChartNoAxesCombined },
+  { id: "kpi", label: "KPI", icon: TrendingUp },
   { id: "reports", label: "Laporan", icon: Files },
   { id: "departments", label: "Departemen", icon: Building2 },
   { id: "positions", label: "Jabatan", icon: BriefcaseBusiness },
@@ -397,6 +399,7 @@ export default function HrisApp({ today }: { today: string }) {
           notes: string;
           assessedAt: string;
           assessor: string;
+          kpiId?: string | null;
           version?: number;
         }
       >
@@ -492,9 +495,10 @@ export default function HrisApp({ today }: { today: string }) {
     () =>
       menu.filter(
         (n) =>
-          ((live || !["selfservice", "policy", "audit"].includes(n.id)) &&
+          ((live ||
+            !["selfservice", "policy", "audit", "kpi"].includes(n.id)) &&
             role === "Admin HR") ||
-          (live && n.id === "selfservice") ||
+          (live && ["selfservice", "kpi"].includes(n.id)) ||
           (role === "Manager"
             ? [
                 "dashboard",
@@ -877,6 +881,7 @@ export default function HrisApp({ today }: { today: string }) {
         for (const r of rows) {
           next[r.employeeId + period] = {
             score: r.score,
+            kpiId: r.kpiId,
             notes: r.notes,
             assessedAt: r.assessedAt.slice(0, 10),
             assessor:
@@ -3227,17 +3232,24 @@ export default function HrisApp({ today }: { today: string }) {
                       {reviewFor(p)?.notes ??
                         "Belum ada penilaian untuk periode ini."}
                     </p>
-                    {role === "Manager" && p.id !== currentUser.id && (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setSelected(p);
-                          setDialog("review");
-                        }}
-                      >
-                        Beri penilaian
+                    {reviewFor(p)?.kpiId && (
+                      <Button variant="outline" onClick={() => setView("kpi")}>
+                        Lihat KPI final
                       </Button>
                     )}
+                    {role === "Manager" &&
+                      p.id !== currentUser.id &&
+                      !reviewFor(p)?.kpiId && (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setSelected(p);
+                            setDialog("review");
+                          }}
+                        >
+                          Beri penilaian
+                        </Button>
+                      )}
                   </Panel>
                 ))}
               </div>
@@ -3535,6 +3547,15 @@ export default function HrisApp({ today }: { today: string }) {
             <PolicySettings onSaved={setPolicy} />
           )}
           {live && role === "Admin HR" && view === "audit" && <AuditLog />}
+          {live && view === "kpi" && (
+            <KpiWorkflows
+              role={role}
+              ownId={currentUser.id}
+              employees={active.map((p) => ({ id: p.id, name: p.name }))}
+              period={periodFromLabel(period)!}
+              onPeriod={(value) => setPeriod(labelFromPeriod(value))}
+            />
+          )}
           <footer className="page-footer">
             <span>PeopleSpace · Human Resource Information System</span>
             <span>Capstone Project / 4E</span>

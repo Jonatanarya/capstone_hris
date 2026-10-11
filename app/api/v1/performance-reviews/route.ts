@@ -6,6 +6,7 @@ import { toApiError } from "@/lib/api/errors";
 import { isUuid } from "@/lib/api/dto";
 
 type ReviewRow = {
+  kpi_id: string | null;
   id: string;
   employee_id: string;
   period: string;
@@ -19,6 +20,7 @@ type ReviewRow = {
 
 function reviewDto(r: ReviewRow) {
   return {
+    kpiId: r.kpi_id,
     id: r.id,
     employeeId: r.employee_id,
     employeeName: r.employees?.full_name ?? null,
@@ -51,7 +53,7 @@ export async function GET(request: Request) {
     let query = supabase
       .from("performance_reviews")
       .select(
-        "id, employee_id, period, score, notes, assessed_by, assessed_at, version, employees(full_name)",
+        "id, employee_id, period, score, notes, assessed_by, assessed_at, version, kpi_id, employees(full_name)",
         { count: "exact" },
       )
       .eq("period", period)

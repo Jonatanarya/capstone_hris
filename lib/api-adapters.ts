@@ -248,6 +248,7 @@ export function attendanceFromDto(a: AttendanceDto): UiAttendance {
 }
 
 export type ReviewDto = {
+  kpiId?: string | null;
   id: string;
   employeeId: string;
   employeeName?: string | null;
