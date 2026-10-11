@@ -1027,6 +1027,17 @@ for (const role of ["EMPLOYEE", "ADMIN_HR"] as const)
       page.getByText("Hasil evaluasi demo", { exact: true }),
     ).toBeVisible();
     await expect(page.getByText("Sangat baik", { exact: true })).toBeVisible();
+    const help = page.locator(".panel.kpi-help");
+    await expect(help).toContainText("Memahami nilai KPI");
+    await expect(help).toContainText("Nilai dihitung otomatis, maksimal 100.");
+    await expect(help).toContainText(
+      "selesai 8 dari target 10 tugas = capaian 80%",
+    );
+    await expect(help).toContainText("menyumbang 40 poin");
+    await expect(help).toContainText(
+      "KPI tidak otomatis mengubah gaji atau bonus.",
+    );
+    await expect(help).not.toContainText("÷");
     if (role === "EMPLOYEE")
       await expect(
         page.getByRole("button", { name: "Susun KPI", exact: true }),

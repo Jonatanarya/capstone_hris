@@ -730,17 +730,21 @@ export function KpiWorkflows({
         </>
       )}
       <div className="panel kpi-help">
-        <strong>Cara menghitung</strong>
+        <strong>Memahami nilai KPI</strong>
         <p>
-          Capaian = realisasi ÷ target × 100 untuk target lebih tinggi; target ÷
-          realisasi × 100 untuk target lebih rendah (realisasi 0 = 100%).
-          Capaian dibatasi 100%. Nilai akhir = jumlah capaian × bobot,
-          dibulatkan ke bilangan bulat.
+          Nilai dihitung otomatis, maksimal 100. Bobot menentukan seberapa besar
+          pengaruh tiap indikator terhadap nilai akhir.
         </p>
         <p>
-          ≥90 Sangat baik · ≥75 Baik · ≥60 Cukup · &lt;60 Perlu peningkatan. KPI
-          tidak otomatis mengubah gaji atau bonus.
+          Contoh: selesai 8 dari target 10 tugas = capaian 80%. Jika bobotnya
+          50%, indikator ini menyumbang 40 poin. Untuk target yang ingin
+          dikurangi, seperti jumlah kesalahan, semakin sedikit semakin baik.
         </p>
+        <p>
+          90–100: Sangat baik · 75–89: Baik · 60–74: Cukup · Di bawah 60: Perlu
+          peningkatan.
+        </p>
+        <p>KPI tidak otomatis mengubah gaji atau bonus.</p>
       </div>
       <Dialog
         open={!!share}
