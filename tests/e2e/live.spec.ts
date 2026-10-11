@@ -817,6 +817,21 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
   let publishes = 0;
   await page.route("**/api/v1/kpis**", async (route) => {
     const request = route.request();
+    if (new URL(request.url()).pathname.endsWith("/targets")) {
+      await route.fulfill({
+        json: {
+          data: [{ id: target.id, name: target.fullName }],
+          meta: { totalPages: 1 },
+        },
+      });
+      return;
+    }
+    if (new URL(request.url()).pathname.endsWith("/share-goals")) {
+      expect(request.postDataJSON()).toEqual({ expectedVersion: 1 });
+      row = { ...row!, goalsSharedAt: "2026-10-11T05:00:00Z", version: 2 };
+      await route.fulfill({ json: { data: row, meta: {} } });
+      return;
+    }
     if (request.method() === "PUT") {
       const body = request.postDataJSON();
       expect(body.employeeId).toBe(target.id);
@@ -841,7 +856,7 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
     }
     if (request.method() === "POST") {
       expect(request.postDataJSON()).toEqual({
-        expectedVersion: 1,
+        expectedVersion: 2,
         expectedReviewVersion: 3,
       });
       publishes++;
@@ -909,10 +924,14 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
     [1, 80],
     [2, 90],
     [3, 100],
-  ])
+  ]) {
     await page
       .getByLabel(`Realisasi ${i}`, { exact: true })
       .fill(String(actual));
+    await page
+      .getByLabel(`Bukti realisasi ${i}`, { exact: true })
+      .fill("Data uji: daftar tugas bulan Oktober");
+  }
   await expect(
     page.getByText("Pratinjau nilai: 87", { exact: true }),
   ).toBeVisible();
@@ -923,7 +942,15 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
   await page
     .getByRole("button", { name: "Simpan draf KPI", exact: true })
     .click();
-  await page.getByRole("button", { name: "Tutup editor", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Tutup editor", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Bagikan target KPI", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Ya, bagikan target KPI", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Terbitkan KPI", exact: true })
     .click();
@@ -1000,9 +1027,14 @@ for (const role of ["EMPLOYEE", "ADMIN_HR"] as const)
       page.getByText("Hasil evaluasi demo", { exact: true }),
     ).toBeVisible();
     await expect(page.getByText("Sangat baik", { exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Susun KPI", exact: true }),
-    ).toHaveCount(0);
+    if (role === "EMPLOYEE")
+      await expect(
+        page.getByRole("button", { name: "Susun KPI", exact: true }),
+      ).toHaveCount(0);
+    else
+      await expect(
+        page.getByRole("button", { name: "Susun KPI", exact: true }),
+      ).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Edit draf KPI", exact: true }),
     ).toHaveCount(0);
@@ -1012,6 +1044,81 @@ for (const role of ["EMPLOYEE", "ADMIN_HR"] as const)
       ),
     ).toBe(true);
   });
+
+test("employee reads shared targets before final without draft evaluation controls", async ({
+  page,
+}) => {
+  await loginWithMocks(
+    page,
+    false,
+    "dimas@example.test",
+    undefined,
+    "EMPLOYEE",
+  );
+  await page.route("**/api/v1/kpi-goals?**", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          {
+            id: "safe-goals",
+            employeeId: member.id,
+            employeeName: member.fullName,
+            period: "2026-10",
+            sharedAt: "2026-10-11T05:00:00Z",
+            indicators: kpiTemplate().map((item) => ({
+              name: item.name,
+              unit: item.unit,
+              direction: item.direction,
+              target: item.target,
+              weight: item.weight,
+              measurement: item.measurement,
+            })),
+          },
+        ],
+        meta: { totalPages: 1 },
+      },
+    }),
+  );
+  await navigate(page, "KPI");
+  await expect(
+    page.getByText("Target dibagikan", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Target periode 2026-10. Penilaian belum final.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".kpi-card")).not.toContainText("Realisasi");
+  await expect(page.locator(".kpi-card .score")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Susun KPI", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("HR composes KPI only for server-authorized Manager targets", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  await page.route("**/api/v1/kpis/targets?**", (route) =>
+    route.fulfill({
+      json: {
+        data: [{ id: member.id, name: "Manager UAT" }],
+        meta: { totalPages: 1 },
+      },
+    }),
+  );
+  await navigate(page, "KPI");
+  await page.getByRole("button", { name: "Susun KPI", exact: true }).click();
+  await expect(
+    page.getByLabel("Karyawan KPI", { exact: true }).locator("option"),
+  ).toHaveCount(1);
+  await expect(page.getByLabel("Karyawan KPI", { exact: true })).toHaveValue(
+    member.id,
+  );
+  await expect(
+    page.getByLabel("Cara mengukur 1", { exact: true }),
+  ).toContainText("Jumlah tugas selesai");
+});
 
 test("KPI load failure is explicit and retryable", async ({ page }) => {
   await loginWithMocks(page);

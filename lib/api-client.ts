@@ -1,4 +1,4 @@
-import type { KpiDto, KpiIndicator } from "./kpi";
+import type { KpiDto, KpiIndicator, KpiGoalDto } from "./kpi";
 import type {
   AccountDto,
   AttendanceDto,
@@ -365,6 +365,13 @@ export const hrApi = {
   performanceReviews: (period: string) =>
     list<ReviewDto>("/performance-reviews", { period }),
   kpis: (period: string) => list<KpiDto>("/kpis", { period }),
+  kpiGoals: (period: string) => list<KpiGoalDto>("/kpi-goals", { period }),
+  kpiTargets: () => list<{ id: string; name: string }>("/kpis/targets"),
+  shareKpiGoals: (id: string, expectedVersion: number) =>
+    request<KpiDto>(`/kpis/${id}/share-goals`, {
+      method: "POST",
+      body: JSON.stringify({ expectedVersion }),
+    }),
   saveKpi: (body: {
     employeeId: string;
     period: string;

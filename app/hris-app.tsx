@@ -887,7 +887,7 @@ export default function HrisApp({ today }: { today: string }) {
             assessor:
               r.assessedBy === session?.userId
                 ? currentUser.name
-                : "Manager penilai",
+                : "Penilai HR/Manager",
             version: r.version,
           };
         }

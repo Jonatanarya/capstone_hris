@@ -44,6 +44,9 @@ import { POST as correctionDecision } from "../app/api/v1/attendance-corrections
 import { POST as cancel } from "../app/api/v1/leave-requests/[id]/cancel/route";
 import { PUT as saveKpi, GET as kpis } from "../app/api/v1/kpis/route";
 import { POST as publishKpi } from "../app/api/v1/kpis/[id]/publish/route";
+import { POST as shareKpi } from "../app/api/v1/kpis/[id]/share-goals/route";
+import { GET as goals } from "../app/api/v1/kpi-goals/route";
+import { GET as targets } from "../app/api/v1/kpis/targets/route";
 import { kpiTemplate } from "../lib/kpi";
 const id = "a0000000-0000-4000-8000-000000000001";
 const context = { params: Promise.resolve({ id }) };
@@ -74,8 +77,34 @@ beforeEach(() => {
   mock.query.range.mockResolvedValue({ data: [], error: null, count: 0 });
 });
 describe("personal and HR workflow routes", () => {
-  it.each(["EMPLOYEE", "ADMIN_HR"])(
-    "%s cannot save or publish KPI",
+  it.each(["EMPLOYEE"])("%s cannot save or publish KPI", async (role) => {
+    mock.actor.mockResolvedValue({
+      role,
+      accountStatus: "ACTIVE",
+      employeeStatus: "ACTIVE",
+      employeeId: id,
+    });
+    expect((await saveKpi(req({}))).status).toBe(403);
+    expect((await publishKpi(req({}), context)).status).toBe(403);
+    expect(mock.rpc).not.toHaveBeenCalled();
+  });
+  it("goals explicitly scope employee ownership and never query draft assessments", async () => {
+    expect(
+      (
+        await goals(
+          new Request("https://hris.test/api/v1/kpi-goals?period=2026-10"),
+        )
+      ).status,
+    ).toBe(200);
+    expect(mock.from).toHaveBeenCalledWith("kpi_goal_plans");
+    expect(mock.query.eq).toHaveBeenCalledWith("employee_id", id);
+    expect((await targets()).status).toBe(403);
+    expect((await shareKpi(req({ expectedVersion: 1 }), context)).status).toBe(
+      403,
+    );
+  });
+  it.each(["ADMIN_HR", "MANAGER"])(
+    "%s delegates KPI scope to database authorization",
     async (role) => {
       mock.actor.mockResolvedValue({
         role,
@@ -83,9 +112,29 @@ describe("personal and HR workflow routes", () => {
         employeeStatus: "ACTIVE",
         employeeId: id,
       });
-      expect((await saveKpi(req({}))).status).toBe(403);
-      expect((await publishKpi(req({}), context)).status).toBe(403);
-      expect(mock.rpc).not.toHaveBeenCalled();
+      expect(
+        (
+          await saveKpi(
+            req({
+              employeeId: id,
+              period: "2026-10",
+              indicators: kpiTemplate(),
+              notes: "",
+              expectedVersion: null,
+            }),
+          )
+        ).status,
+      ).toBe(200);
+      expect(
+        (await shareKpi(req({ expectedVersion: "1" }), context)).status,
+      ).toBe(422);
+      expect(
+        (await shareKpi(req({ expectedVersion: 1 }), context)).status,
+      ).toBe(200);
+      expect(mock.rpc).toHaveBeenCalledWith("share_kpi_goals", {
+        p_id: id,
+        p_expected_version: 1,
+      });
     },
   );
   it("employee KPI list explicitly scopes own published only", async () => {

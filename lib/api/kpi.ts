@@ -20,6 +20,7 @@ export type KpiRow = {
   score: number | null;
   version: number;
   published_at: string | null;
+  goals_shared_at?: string | null;
   employees?: { full_name: string } | null;
 };
 export function kpiDto(row: KpiRow): KpiDto {
@@ -34,5 +35,6 @@ export function kpiDto(row: KpiRow): KpiDto {
     score: row.score,
     version: row.version,
     publishedAt: row.published_at,
+    goalsSharedAt: row.goals_shared_at ?? null,
   };
 }

@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     let query = supabase
       .from("kpi_assessments")
       .select(
-        "id,employee_id,period,indicators,notes,status,score,version,published_at,employees(full_name)",
+        "id,employee_id,period,indicators,notes,status,score,version,published_at,goals_shared_at,employees(full_name)",
         { count: "exact" },
       )
       .eq("period", period)
@@ -43,7 +43,7 @@ export async function PUT(request: Request) {
     const supabase = await createSupabaseServerClient();
     const actor = await getActor(supabase);
     assertActive(actor);
-    requireRole(actor, "MANAGER");
+    requireRole(actor, "MANAGER", "ADMIN_HR");
     const body = (await readJson(request)) as Record<string, unknown>;
     workflowBody(body, [
       "employeeId",

@@ -8,6 +8,23 @@ import {
 } from "../lib/kpi";
 import { kpiPeriod } from "../lib/api/kpi";
 describe("KPI weighted calculations and strict validation", () => {
+  it("validates measurement and evidence without accepting arbitrary metadata", () => {
+    const items = kpiTemplate();
+    expect(items.every((i) => i.measurement && i.evidence === "")).toBe(true);
+    expect(
+      validateIndicators(
+        items.map((i) => ({ ...i, evidence: "8/10 tasks; demo only" })),
+      ),
+    ).toBe(true);
+    expect(
+      validateIndicators(items.map((i) => ({ ...i, measurement: 42 }))),
+    ).toBe(false);
+    expect(
+      validateIndicators(
+        items.map((i) => ({ ...i, evidence: "x".repeat(1001) })),
+      ),
+    ).toBe(false);
+  });
   it("does not turn blank actuals into zero or a fake final score", () => {
     const items = kpiTemplate();
     expect(validateIndicators(items)).toBe(true);

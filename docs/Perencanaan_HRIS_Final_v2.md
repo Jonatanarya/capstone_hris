@@ -1103,9 +1103,9 @@ Bagian 1–22 tetap menjadi ruang lingkup sistem tujuan. Tambahan ini memperjela
 
 ### 23.1 Batas Tahap Implementasi
 
-Frontend menggunakan Next.js resmi, React, TypeScript, Tailwind CSS dan shadcn. Node.js adalah runtime pengembangan/build/server, bukan framework alternatif dari Next.js. Tahap ini tidak membutuhkan server Express terpisah. Infrastruktur Supabase (PostgreSQL, Auth, RLS) tetap direncanakan untuk tahap berikutnya.
+Frontend menggunakan Next.js resmi, React, TypeScript, Tailwind CSS dan shadcn. Node.js adalah runtime pengembangan/build/server, bukan framework alternatif dari Next.js. Server Express terpisah tidak diperlukan. Supabase PostgreSQL, Auth, RLS dan RPC sudah terintegrasi pada mode live.
 
-Pemilihan peran, login, pengaturan akun, presensi, penerbitan payroll, dan penilaian saat ini adalah simulasi menggunakan data fiktif di memori. Refresh mengembalikan data awal. Pembatasan tampilan bukan otorisasi yang aman; jangan memasukkan data personal atau gaji nyata ke demo publik. Vercel menangani hosting, sementara autentikasi nantinya ditangani Supabase Auth, bukan oleh hosting itu sendiri.
+Mode demo lokal memakai fixture; mode live di Vercel memakai sesi Supabase Auth dan data persisten, sehingga refresh tidak mereset transaksi. Role dibaca dari profil akun di server, bukan dipilih pengguna. Otorisasi berlaku di API, RLS, dan RPC database. Jangan masukkan gaji nyata/data sensitif ke demonstrasi publik. Alias @example.test tidak menerima email pemulihan.
 
 ### 23.2 Matriks Akses dan Kepemilikan
 
@@ -1114,9 +1114,9 @@ Pemilihan peran, login, pengaturan akun, presensi, penerbitan payroll, dan penil
 | Data karyawan | Seluruh data, tambah/edit/nonaktif | Baca anggota departemen sendiri | Profil sendiri |
 | Kontak profil | Edit seluruh data | Edit telepon/alamat sendiri | Edit telepon/alamat sendiri |
 | Presensi | Rekap organisasi + presensi sendiri | Rekap tim + presensi sendiri | Presensi dan histori sendiri |
-| Pengajuan cuti | Pantau semua | Putuskan milik anggota tim, bukan diri sendiri | Ajukan dan lihat status sendiri |
-| Payroll | Siapkan dan terbitkan periode | Tidak memiliki akses payroll | Slip sendiri setelah terbit |
-| Penilaian | Baca hasil organisasi | Nilai anggota tim aktif, bukan diri sendiri | Baca hasil sendiri |
+| Pengajuan cuti | Ajukan sendiri; putuskan Manager/departemen tanpa Manager aktif, bukan diri sendiri | Ajukan sendiri; putuskan anggota tim selain diri sendiri/Manager | Ajukan, batalkan PENDING, lihat status sendiri |
+| Payroll | Siapkan/terbitkan periode dan baca slip pribadi | Slip sendiri setelah terbit; tanpa administrasi/gaji kolega | Slip sendiri setelah terbit |
+| Penilaian/KPI | Pantau organisasi; nilai KPI Manager aktif selain diri sendiri | Nilai anggota tim aktif selain diri sendiri/Manager; baca target/hasil sendiri | Target yang dibagikan dan hasil final sendiri |
 | Master data/akun | Kelola | Tidak tersedia | Tidak tersedia |
 
 Permintaan API, ekspor, dan download dokumen wajib menerapkan matriks yang sama di backend. Manager menggunakan departemen akun sebagai ruang lingkup, tidak bergantung pada nama departemen yang ditulis tetap di kode. Hubungan atasan lintas departemen belum masuk demo dan memerlukan model supervisor terpisah jika dibutuhkan.
@@ -1124,12 +1124,12 @@ Permintaan API, ekspor, dan download dokumen wajib menerapkan matriks yang sama 
 ### 23.3 Aturan Data dan Validasi
 
 1. Karyawan: nomor induk unik, email unik tanpa membedakan kapital, nama/jabatan/alamat bukan spasi kosong, telepon valid, tanggal bergabung terisi, gaji pokok tidak negatif. Identitas tiga akun demo tetap aktif agar skenario pengujian dapat diakses.
-2. Presensi: satu pasangan masuk/keluar per karyawan per tanggal Jakarta; keluar hanya setelah masuk dan tidak boleh diulang. Tanggal histori dapat dipilih. Hadir dihitung dari catatan masuk, bukan dari status karyawan aktif. Terlambat pada demo berarti masuk setelah 08.00 WIB. Hari libur, shift, toleransi, koreksi presensi, dan bukti izin perlu dikonfigurasi di tahap lanjutan.
-3. Cuti: tanggal tidak lampau, selesai tidak sebelum mulai, minimal satu hari kerja, tidak bentrok dengan pengajuan menunggu/disetujui. Demo tidak menghitung akhir pekan dan belum mengetahui hari libur nasional. Pengajuan lintas tahun dipisah. Cuti tahunan menunggu ikut mereservasi kuota; ditolak melepaskan reservasi. Kuota dihitung per karyawan per tahun.
-4. Persetujuan: hanya manager tim, hanya status menunggu, tidak boleh memutuskan pengajuan sendiri. Catat nama pemutus, tanggal keputusan dan alasan wajib pada penolakan. Untuk produksi gunakan ID user dan waktu server yang tidak dapat dimanipulasi.
+2. Presensi: satu pasangan masuk/keluar per karyawan per tanggal Jakarta; waktu/status berasal dari server, keterlambatan termasuk detik. Hari kerja/jam/tanggal libur diatur HR, default Senin–Jumat 08.00–17.00 WIB. Cuti disetujui/hari libur menolak check-in. Koreksi 30 hari terakhir diajukan pemilik dan diputuskan HR lain dengan pemeriksaan versi. Shift/GPS/fingerprint ditunda.
+3. Cuti: tahunan/izin tidak mundur, sakit boleh mundur sesuai kebijakan (default 7 hari). Selesai tidak sebelum mulai; minimal satu hari kerja menurut kalender HR, tidak bentrok dengan pengajuan menunggu/disetujui atau presensi. Libur nasional diinput HR, bukan otomatis. Lintas tahun dipisah. PENDING mereservasi kuota tahunan; REJECTED/CANCELLED melepaskan reservasi.
+4. Persetujuan: Manager anggota departemen selain diri sendiri/Manager; HR menangani Manager atau departemen tanpa Manager aktif. Hanya PENDING, tanpa self-approval; keputusan menyimpan penilai/waktu server, penolakan wajib alasan, perubahan bersamaan ditolak. Pemilik boleh membatalkan PENDING, riwayat tidak dihapus.
 5. Payroll: periode memiliki status draft/diterbitkan. Semua komponen harus bilangan nonnegatif, potongan tidak melebihi gaji + tunjangan + bonus. Saat terbit, gaji pokok disalin menjadi snapshot periode agar perubahan gaji berikutnya tidak mengubah slip lama. Komponen dikunci setelah terbit; pembatalan/revisi resmi membutuhkan alur audit backend.
 6. Kinerja: nilai 0–100 dan catatan wajib, disimpan per karyawan/periode dengan tanggal dan penilai. Periode yang belum dinilai menampilkan keadaan kosong, bukan hasil periode lain. Manager tidak menilai dirinya sendiri.
-7. Master: nama tidak kosong/duplikat, penggantian nama memperbarui referensi karyawan. Produksi harus memakai ID master/foreign key; penghapusan master yang sudah digunakan perlu ditolak atau diarahkan ke pengarsipan.
+7. Master: nama tidak kosong/duplikat, referensi memakai UUID/foreign key; perubahan versioned dan audited. Master yang masih digunakan tidak boleh dihapus.
 8. Ekspor: CSV meng-escape kutipan/pemisah dan menetralisasi awalan formula spreadsheet. Ekspor karyawan mengikuti pencarian/filter. Rekap presensi mengikuti tanggal, payroll/kinerja mengikuti periode dan peran.
 
 ### 23.4 Tambahan Kebutuhan Fungsional
@@ -1154,7 +1154,7 @@ Permintaan API, ekspor, dan download dokumen wajib menerapkan matriks yang sama 
 - Layout tidak meluber pada lebar desktop dan ponsel sekitar 390 px; tabel panjang dapat digulir secara horizontal di area tabel.
 - Navigasi ponsel menutup setelah modul dipilih. Modal panjang dapat digulir dan tombol simpan tetap dapat dijangkau.
 - Navigasi keyboard, fokus modal, urutan tab dan kontras harus diuji sebelum produksi. Audit WCAG menyeluruh belum dinyatakan lulus hanya berdasarkan tes otomatis dasar.
-- Semua data harus berlabel demo. Keadaan loading/gagal API, retry, pagination server dan konflik perubahan akan ditambahkan ketika API tersedia; daftar kecil di memori belum memerlukan simulasi jaringan.
+- Data penggunaan akademik berlabel demo. Mode live sudah memiliki loading/error/retry, pagination server, dan konflik versi; kegagalan API tidak diganti dengan fixture.
 
 ### 24.2 Kriteria Data/Alur
 
@@ -1169,7 +1169,7 @@ Permintaan API, ekspor, dan download dokumen wajib menerapkan matriks yang sama 
 
 ### 24.3 Strategi Tes
 
-Unit test (Vitest) memeriksa tanggal Jakarta, hari kerja, kuota/reservasi, bentrok cuti, escaping CSV dan validasi komponen payroll. Browser test (Playwright Chromium) menjalankan alur profil, lingkup tim, presensi, histori, download CSV dan penerbitan slip pada desktop serta ponsel. Lint tanpa warning, TypeScript dan build produksi menjadi quality gate. Tambahkan tes API/RLS, transaksi, konkurensi, audit log, backup dan pemulihan ketika backend dibangun.
+Unit/route test memeriksa validasi, role, perhitungan, scoping, dan konflik. Browser test menjalankan mode demo/live-mock pada desktop/ponsel; UAT terpisah memakai sesi dan transaksi Supabase nyata. Regresi database selalu rollback, memeriksa RLS, RPC, audit, versi, payroll immutable, serta KPI. Lint tanpa warning, TypeScript, unit, regresi PostgreSQL terisolasi, build, dan browser menjadi quality gate CI. Backup/recovery drill dan audit keamanan menyeluruh belum diklaim lulus.
 
 ## 25. Git, CI/CD, dan Deployment
 
@@ -1180,13 +1180,13 @@ Repository: https://github.com/Jonatanarya/capstone_hris. Source frontend berada
 3. Konfigurasi membutuhkan repository/environment secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`. Jangan menaruh token di source, README, chat atau file publik. Konfigurasikan melalui pengaturan GitHub.
 4. CD mengambil SHA yang sudah lolos CI, menarik konfigurasi Vercel, membangun output Vercel dan deploy `--prebuilt --prod`. Deploy otomatis bawaan Git Vercel dinonaktifkan pada konfigurasi proyek agar tidak melewati gerbang tes.
 5. Sebelum kredensial dan project Vercel tersedia, CI dapat berjalan tetapi deployment akan dilewati; ini bukan deployment berhasil. Verifikasi URL dan smoke test setelah aktivasi.
-6. Gunakan pull request untuk perubahan berikutnya dan aktifkan proteksi `main` setelah check CI tersedia. Rollback aplikasi melalui deployment Vercel sebelumnya; perubahan database kelak memerlukan migrasi/rollback tersendiri.
+6. Gunakan pull request untuk perubahan berikutnya dan aktifkan proteksi `main` setelah check CI tersedia. Rollback aplikasi melalui deployment Vercel sebelumnya tidak membatalkan schema/data Supabase; gunakan migrasi perbaikan baru, bukan reset database atau edit migrasi yang sudah diterapkan.
 
 Vercel merupakan pilihan awal sesuai Bagian 18. GitHub Pages dapat menjadi opsi demo statis dengan `output: export`, tetapi bukan tempat menjalankan server/API Next.js. Pilihan provider akhir mengikuti keputusan kelompok.
 
 ## 26. Pekerjaan yang Tetap Belum Selesai
 
-Autentikasi, persistensi, RLS/server authorization, transaksi payroll, audit, notifikasi in-app, kalender HR dan koreksi presensi sudah diimplementasikan untuk demo. Pekerjaan lanjutan: supervisor/delegasi rinci, backup recovery drill, dan penyelarasan UML. Bukan sistem payroll produksi; tidak mencakup pajak/transfer bank/rekrutmen/GPS/fingerprint. Persyaratan terbaru dijelaskan pada Bagian 27.
+Autentikasi, persistensi, RLS/server authorization, transaksi payroll, audit, notifikasi in-app, kalender HR, koreksi presensi dan KPI sudah diimplementasikan untuk demo. UML revisi disediakan terpisah tanpa menimpa model PowerDesigner asli. Pekerjaan lanjutan: supervisor/delegasi rinci, backup recovery drill, pajak/transfer bank/rekrutmen/GPS/fingerprint. Bukan sistem payroll produksi.
 
 ## 27. Penyempurnaan Alur Demo Capstone (11 Oktober 2026)
 
@@ -1200,12 +1200,22 @@ Autentikasi, persistensi, RLS/server authorization, transaksi payroll, audit, no
 | FR51 | Kebijakan HR | Jam kerja, hari kerja, tanggal libur, kuota default dan batas lapor sakit mundur; HR-only/versioned/audited |
 | FR52 | Notifikasi dan audit | Event relevan dari data persisten + read receipt per akun; HR membaca riwayat tanpa mengubahnya |
 | FR53 | Pengaman layanan pribadi/offboarding | Password opsional dengan verifikasi password saat ini; konfirmasi nonaktif; akun/employee tidak aktif tidak dapat mengakses sistem |
-| FR54 | KPI bulanan berbobot | Manager menyusun 1–10 indikator/target/satuan/arah/bobot total 100%, mengisi realisasi, menyimpan DRAFT lalu menerbitkan PUBLISHED; Karyawan hanya melihat hasil final sendiri, HR memantau organisasi |
+| FR54 | KPI bulanan berbobot | Manager menilai anggota aktif tim selain diri sendiri/Manager; 1–10 indikator, target positif, bobot total 100%, final atomik dengan performance review |
+| FR55 | Target KPI transparan | Target/bobot/cara mengukur dibagikan sebagai snapshot aman; tidak memuat realisasi/bukti/catatan/nilai draf; target terkunci setelah dibagikan |
+| FR56 | Penilaian Manager dan bukti | HR menilai KPI Manager aktif, tanpa self-assessment; cara ukur wajib sebelum berbagi, bukti realisasi wajib sebelum final; editor menutup setelah simpan berhasil |
 
-Prioritas tetap demonstrasi mata kuliah. Password NIM dan salary 0 yang belum dikonfigurasi tidak diubah otomatis; nominal contoh perlu diisi HR sebelum payroll terbit. Role berasal dari sesi login, bukan pilihan browser. Payroll menggunakan roster aktif saat diproses; histori effective salary/resign/prorata, delegasi supervisor, entitlement individual di UI dan pembatalan cuti disetujui ditunda. KPI demo menggunakan alur draf/final; hasil final menjadi nilai penilaian kinerja, bukan mengubah gaji/bonus. Detail skenario UAT/API/migrasi tersedia pada panduan demo. UML akhir perlu memasukkan CANCELLED, HR fallback, koreksi, layanan pribadi dan KPI; diagram lama belum otomatis berubah.
+Prioritas tetap demonstrasi mata kuliah. Password NIM dipertahankan; 40 akun kelas memakai gaji contoh Rp3.000.000 atas persetujuan pengguna. Role berasal dari sesi, bukan pilihan browser. Payroll memakai roster aktif; histori effective salary/resign/prorata, delegasi, entitlement individual di UI dan pembatalan cuti disetujui ditunda. KPI memakai alur target dibagikan, draf evaluasi, lalu final yang menjadi performance review tanpa mengubah gaji/bonus. Panduan demo mencatat skenario UAT/API/migrasi. UML revisi mencakup CANCELLED, HR fallback, koreksi, layanan pribadi dan KPI; diagram lama tetap arsip.
 
 ### 27.1 Aturan KPI (Key Performance Indicator)
 
-Manager hanya menilai anggota aktif departemennya, bukan diri sendiri. Target harus positif; bobot tiap indikator integer 1–100 dan total tepat 100%; nama indikator unik. Realisasi boleh kosong saat draf, wajib nonnegatif dan lengkap saat final. Arah HIGHER menghitung realisasi/target × 100; LOWER menghitung target/realisasi × 100, realisasi nol berarti capaian 100%. Capaian dibatasi 100%; nilai akhir dibulatkan dari jumlah capaian × bobot/100.
+Manager menilai anggota aktif departemennya selain diri sendiri/Manager. HR menilai Manager aktif saja dan tetap tidak bisa menilai diri sendiri. Target positif; bobot integer 1–100 total tepat 100%; nama unik. Draf dapat menyimpan realisasi kosong. Bagikan target setelah cara ukur/sumber data terisi; snapshot tanpa realisasi/bukti/catatan/nilai tersedia bagi pemilik dan memicu notifikasi. Target/bobot/cara ukur terkunci setelah berbagi. Realisasi dan bukti wajib lengkap sebelum final; bukti berupa teks jumlah/periode/referensi, bukan unggahan file atau data sensitif.
 
-Kategori demo: ≥90 Sangat baik, ≥75 Baik, ≥60 Cukup, sisanya Perlu peningkatan. Finalisasi membutuhkan konfirmasi, expectedVersion KPI, dan expectedReviewVersion jika penilaian manual sudah ada. Perubahan bersamaan ditolak, bukan overwrite diam-diam. Final tersimpan atomik dengan penilaian kinerja, dicatat audit, dan terkunci; periode berikutnya memakai KPI baru. Tidak ada skor/realisasi buatan yang otomatis diisi. Target berasal dari input Manager, bukan otomatis ditarik dari absensi. Notifikasi penilaian pribadi yang sudah ada juga mencakup penerbitan hasil KPI.
+Arah HIGHER: realisasi/target × 100; LOWER: target/realisasi × 100, realisasi nol = 100%. Capaian dibatasi 100%; nilai akhir dibulatkan dari jumlah capaian × bobot/100. Persentase realisasi perlu dihitung penilai dari jumlah pembilang/penyebut yang dijelaskan pada cara ukur; nilai tidak ditarik otomatis dari absensi.
+
+Kategori demo: ≥90 Sangat baik, ≥75 Baik, ≥60 Cukup, sisanya Perlu peningkatan. Finalisasi membutuhkan konfirmasi, expectedVersion KPI, dan expectedReviewVersion jika review sudah ada. Perubahan bersamaan ditolak. Final tersimpan atomik dengan review, audit, dan terkunci; periode berikutnya memakai KPI baru. Tidak ada skor/realisasi otomatis. KPI tidak mengubah gaji/bonus. Simpan sukses menutup editor; bila gagal, input tetap dapat diperbaiki.
+
+### 27.2 Data demo dan gladi bersih
+
+Atas persetujuan pengguna, tepat 40 akun kelas memakai gaji pokok contoh Rp3.000.000/bulan. Ini bukan gaji nyata; password NIM, role, gaji akun lama, dan payroll historis tidak diubah. Tiga akun berlabel [UAT] pada departemen UAT Capstone 2026-10-11 digunakan untuk transaksi uji terpisah. Payroll mencakup seluruh roster aktif: uji penerbitannya harus rollback atau mendapat izin terpisah sebelum membuat slip uji bagi akun kelas.
+
+Paket UML revisi dan skenario demo ada di docs/UML dan docs/DEMO_CAPSTONE.md; model .oom/.oob lama tetap dipertahankan sebagai arsip. Koreksi final KPI, delegasi, metrik operasional otomatis, prorata, BPJS/pajak, dan pembayaran nyata berada di luar demo.

@@ -5,6 +5,8 @@ export type KpiIndicator = {
   target: number;
   weight: number;
   actual: number | null;
+  measurement?: string;
+  evidence?: string;
 };
 export type KpiDto = {
   id: string;
@@ -17,6 +19,15 @@ export type KpiDto = {
   score: number | null;
   version: number;
   publishedAt: string | null;
+  goalsSharedAt?: string | null;
+};
+export type KpiGoalDto = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  period: string;
+  indicators: Omit<KpiIndicator, "actual" | "evidence">[];
+  sharedAt: string;
 };
 
 export function validateIndicators(value: unknown): value is KpiIndicator[] {
@@ -28,12 +39,25 @@ export function validateIndicators(value: unknown): value is KpiIndicator[] {
     if (
       Object.keys(item).some(
         (k) =>
-          !["name", "unit", "direction", "target", "weight", "actual"].includes(
-            k,
-          ),
+          ![
+            "name",
+            "unit",
+            "direction",
+            "target",
+            "weight",
+            "actual",
+            "measurement",
+            "evidence",
+          ].includes(k),
       )
     )
       return false;
+    for (const field of ["measurement", "evidence"])
+      if (
+        field in item &&
+        (typeof item[field] !== "string" || item[field].length > 1000)
+      )
+        return false;
     if (
       typeof item.name !== "string" ||
       !item.name.trim() ||
@@ -101,6 +125,9 @@ export const kpiTemplate = (): KpiIndicator[] => [
     target: 100,
     weight: 50,
     actual: null,
+    measurement:
+      "Jumlah tugas selesai / tugas yang disepakati × 100. Sumber: daftar tugas bulanan.",
+    evidence: "",
   },
   {
     name: "Kualitas hasil kerja",
@@ -109,6 +136,9 @@ export const kpiTemplate = (): KpiIndicator[] => [
     target: 100,
     weight: 30,
     actual: null,
+    measurement:
+      "Jumlah hasil diterima tanpa revisi / seluruh hasil diperiksa × 100. Sumber: catatan pemeriksaan.",
+    evidence: "",
   },
   {
     name: "Ketepatan waktu",
@@ -117,5 +147,8 @@ export const kpiTemplate = (): KpiIndicator[] => [
     target: 100,
     weight: 20,
     actual: null,
+    measurement:
+      "Jumlah tugas selesai sebelum tenggat / tugas jatuh tempo × 100. Sumber: tenggat dan tanggal penyelesaian.",
+    evidence: "",
   },
 ];

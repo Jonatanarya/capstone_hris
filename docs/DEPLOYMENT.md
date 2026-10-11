@@ -73,7 +73,7 @@ Disarankan aktifkan branch protection/ruleset `main`, wajibkan check `validate` 
 
 ## Rollback
 
-Jika versi baru bermasalah, gunakan deployment sebelumnya di dashboard Vercel, kemudian buat commit perbaikan/revert di GitHub agar source sinkron. Jangan reset paksa history. Frontend belum mempunyai migrasi database; kelak rollback data memerlukan prosedur terpisah.
+Jika versi baru bermasalah, gunakan deployment sebelumnya di Vercel, lalu buat commit perbaikan/revert agar source sinkron. Jangan reset paksa history. Repository sudah memiliki migrasi Supabase additive sampai 0013: rollback aplikasi tidak membatalkan schema/data. Pertahankan kompatibilitas deployment lama dan gunakan migrasi perbaikan baru, bukan mengedit migration yang telah diterapkan atau reset database produksi. Jalankan dry-run dan regresi rollback-only sebelum db:apply eksplisit; CI memakai PostgreSQL disposable. Deployment aplikasi saat ini tidak otomatis menerapkan migrasi remote.
 
 ## Referensi
 

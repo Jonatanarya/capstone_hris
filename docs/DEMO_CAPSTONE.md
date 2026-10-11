@@ -9,7 +9,7 @@ Pembaruan 11 Oktober 2026. Ini HRIS untuk demonstrasi akademik, bukan sistem pen
 | Profil/kontak, absensi, cuti pribadi | Milik sendiri | Milik sendiri | Milik sendiri |
 | Slip pribadi terbit, koreksi absensi, password opsional | Milik sendiri | Milik sendiri | Milik sendiri |
 | Direktori/absensi/penilaian | Organisasi | Departemen sendiri | Data sendiri |
-| KPI bulanan | Monitor draf/final organisasi | Susun/isi/final anggota departemen selain diri sendiri | Baca hasil final sendiri |
+| KPI bulanan | Monitor organisasi; menilai Manager selain diri sendiri | Susun/bagikan/isi/final anggota departemen selain diri sendiri/Manager | Baca target dibagikan dan final sendiri |
 | Keputusan cuti | Pengajuan Manager atau departemen tanpa Manager aktif | Anggota departemen selain diri sendiri dan Manager | Tidak |
 | Keputusan koreksi absensi | Karyawan aktif, selain diri sendiri | Tidak | Tidak |
 | Gaji/master/akun, kebijakan, audit, laporan organisasi | Ya | Tidak | Tidak |
@@ -24,9 +24,9 @@ Tim demo memakai departemen Demo Kelas 4E. Supervisor bertingkat, delegasi, dan 
 4. Karyawan → Pengajuan cuti → pilih hari kerja **yang belum memiliki absensi**. Manager → Pengajuan cuti → Setujui → konfirmasi. Tunjukkan nama peninjau, status, dan notifikasi karyawan. Manager sendiri mengajukan cuti ke HR, bukan menyetujui sendiri.
 5. Ajukan cuti lain yang masih menunggu → Batalkan pengajuan → konfirmasi. Status menjadi Dibatalkan, catatan tidak dihapus, saldo reservasi tahunan kembali. Cuti disetujui/ditolak tidak dapat dibatalkan langsung; gunakan data/tanggal lain untuk demo.
 6. Layanan pribadi → koreksi absensi tanggal kerja dalam 30 hari terakhir. Pengajuan tidak langsung mengubah absensi. HR lain meninjau jam/alasan, memasukkan catatan keputusan dan konfirmasi. Versi absensi berubah sejak pengajuan menyebabkan konflik, bukan overwrite diam-diam.
-7. HR → data karyawan → lengkapi **gaji pokok contoh** secara eksplisit. Nominal baru tidak diisi otomatis karena belum ada arahan nilai. Semua karyawan aktif yang masuk draft harus lengkap agar payroll bisa diterbitkan. Nilai 0 berarti belum dikonfigurasi.
+7. HR → data karyawan → periksa gaji pokok contoh. Tepat 40 akun kelas sudah diisi Rp3.000.000/bulan sesuai persetujuan pengguna; bukan gaji nyata. Gaji akun lama tidak diubah. Semua anggota roster aktif harus lengkap sebelum payroll terbit; nilai 0 berarti belum dikonfigurasi.
 8. HR → Payroll → pilih bulan → buat draft → periksa komponen dan readiness → sinkronkan bila master berubah → terbitkan dengan konfirmasi. Karyawan/Manager/HR → Layanan pribadi → slip gaji sendiri setelah terbit. Anggota kelas baru tidak otomatis dimasukkan ke payroll historis yang sudah terbit. Payroll tidak mengirim uang.
-9. Manager → KPI → pilih bulan → Susun KPI → pilih anggota aktif → sesuaikan indikator, target, arah, satuan, bobot total 100% → isi realisasi → Simpan draf KPI → Tutup editor → Terbitkan KPI → konfirmasi. Karyawan → KPI membaca hasil final sendiri. HR memantau hasil organisasi. Nilai final otomatis menjadi nilai Penilaian kinerja; penilaian manual lama diganti hanya setelah konfirmasi/version check, lalu terkunci untuk periode itu. Penilaian manual tetap tersedia bila belum ada KPI final. Tidak ada penilaian diri sendiri.
+9. Manager → KPI → pilih bulan → Susun KPI → anggota aktif → indikator/target/arah/satuan/bobot 100% dan cara ukur/sumber data → Simpan draf (editor otomatis tutup) → Bagikan target → konfirmasi. Karyawan melihat target tanpa nilai draf. Target terkunci; penilai → Edit draf → realisasi dan bukti teks (jumlah/periode/referensi) → Simpan → Terbitkan KPI → konfirmasi. HR memakai alur yang sama untuk Manager saja. Final menjadi nilai Penilaian kinerja; review lama diganti hanya dengan konfirmasi/version check. Final tidak bisa ditimpa secara manual. Tidak ada self-assessment; KPI tidak mengubah gaji.
 10. HR → Riwayat aktivitas: perubahan tercatat, hanya baca. Tunjukkan notifikasi belum dibaca/dibaca yang bertahan setelah muat ulang.
 
 Password NIM dipertahankan untuk kemudahan demo. Form ganti password pribadi opsional memerlukan password saat ini, konfirmasi password baru, dan masuk ulang. Jangan mencoba ganti password seluruh kelompok saat presentasi. Alias @example.test bukan inbox; pemulihan melalui email hanya untuk alamat email sungguhan. Pemulihan massal/akun terlupa memerlukan tindakan pemilik proyek secara eksplisit, bukan endpoint reset anonim berbasis NIM.
@@ -54,8 +54,11 @@ Password NIM dipertahankan untuk kemudahan demo. Form ganti password pribadi ops
 | GET/PATCH /notifications | Event yang relevan/read receipt milik akun login |
 | GET /audit-log?page=N&pageSize=50 | HR saja, tanpa password/token/raw metadata |
 | GET /kpis?period=YYYY-MM | HR organisasi; Manager departemen + hasil final sendiri; Karyawan final sendiri |
-| PUT /kpis | Manager; employeeId/period/indicators/notes/expectedVersion; null version untuk draf baru |
-| POST /kpis/{id}/publish | Manager; expectedVersion dan expectedReviewVersion (null jika review belum ada); nilai dihitung server |
+| GET /kpis/targets | Manager: anggota aktif tim selain Manager/diri sendiri; HR: Manager aktif selain diri sendiri |
+| GET /kpi-goals?period=YYYY-MM | Snapshot target aman; pemilik dapat membaca sebelum final, tanpa realisasi/bukti/catatan |
+| PUT /kpis | Manager untuk tim, HR untuk Manager; null expectedVersion hanya draf baru; target dibagikan tidak bisa diubah |
+| POST /kpis/{id}/share-goals | Penilai yang berwenang; expectedVersion; cara ukur wajib; snapshot aman/notifikasi pemilik |
+| POST /kpis/{id}/publish | Penilai yang berwenang; expectedVersion dan expectedReviewVersion; target sudah dibagikan, realisasi/bukti lengkap; nilai server |
 
 Manager tetap mendapat 403 pada API administrasi payroll. RLS memberi akses hanya ke **item terbit miliknya sendiri**, bukan gaji kolega. Mutasi bisnis memakai RPC terotorisasi, bukan service-role bypass. Semua mutasi browser melewati same-origin/CSRF check yang sudah ada.
 
@@ -65,7 +68,7 @@ Migrasi additive 0010 menambah enum CANCELLED; harus commit sebelum 0011 memakai
 
 Tes unit memeriksa input/role/password/scoping dan keterlambatan 30 detik. Regresi database menguji hak akses, quota, cancellation, immutability, fallback, koreksi dan notifikasi dalam transaksi yang selalu rollback. Browser tes memakai API mock pada desktop/ponsel; smoke test deployment memakai login nyata dan pembacaan data tanpa membuat cuti/absensi/payroll asli. Penggantian password nyata tidak dijalankan otomatis pada akun demo. Bukti hasil terakhir ada pada Actions dan catatan akhir audit.
 
-Lingkup lanjutan yang sengaja ditunda: struktur supervisor/delegasi bertingkat, pembatalan cuti disetujui dengan persetujuan baru, KPI otomatis dari metrik operasional/kalibrasi lintas penilai, entitlement individual lewat UI, histori gaji/tanggal resign serta prorata otomatis, GPS/fingerprint, rekrutmen, pajak/BPJS dan transfer bank, email/push notification, audit compliance dan backup recovery drill. Diagram UML akademik masih perlu diselaraskan dengan FR46–FR54; dokumen ini tidak mengklaim gambar UML lama sudah diperbarui.
+Lingkup lanjutan: supervisor/delegasi bertingkat, pembatalan cuti disetujui, KPI dari metrik operasional/kalibrasi, entitlement individual lewat UI, histori gaji/resign/prorata, GPS/fingerprint, rekrutmen, pajak/BPJS/transfer bank, email/push, audit compliance dan backup recovery drill. Paket UML revisi FR46–FR56 tersedia di docs/UML; file PowerDesigner lama tidak ditimpa.
 
 ## KPI demo dan contoh hitungan
 
@@ -73,4 +76,10 @@ Migrasi additive 0012 menambah kpi_assessments dan provenance kpi_id pada perfor
 
 Contoh: penyelesaian tugas target 100%, bobot 50%, realisasi 80%; kualitas target 100%, bobot 30%, realisasi 90%; ketepatan waktu target 100%, bobot 20%, realisasi 100%. Nilai final = 80×50% + 90×30% + 100×20% = **87 (Baik)**. Untuk indikator jumlah kesalahan, pilih lebih rendah lebih baik dan target positif; realisasi 0 mendapat capaian 100%. Semua capaian dibatasi 100%, lalu total dibulatkan. Kosong berarti belum dinilai, berbeda dari realisasi nol. Template awal hanya contoh target dan dapat diubah; realisasi tidak diisi otomatis.
 
-Draf tidak terlihat oleh Karyawan. KPI final immutable dan penerbitan ulang ditolak. Tidak ada tombol hapus/reset untuk menghilangkan histori final. Koreksi final memerlukan keputusan kelompok dan migrasi/alur khusus, bukan overwrite lewat penilaian manual. KPI tidak otomatis mengubah gaji/bonus. Notifikasi menggunakan event penilaian kinerja pribadi yang telah tersedia.
+Draf evaluasi tidak terlihat oleh pemilik yang bukan penilai. Target dibagikan tersimpan di kpi_goal_plans, tanpa actual/evidence/notes/score, dan memicu notifikasi sendiri. Migrasi additive 0013 menambah snapshot target, otorisasi HR terhadap Manager, cara ukur/bukti dan audit. Final immutable; koreksi final membutuhkan alur khusus, bukan overwrite manual. Simpan gagal mempertahankan editor; simpan sukses menutupnya.
+
+## Gladi bersih terpisah
+
+Gunakan departemen **UAT Capstone 2026-10-11** dan tiga akun berlabel [UAT], bukan 40 akun kelas. Kredensial uji dibuat privat dan tidak disimpan dalam Git. Periode KPI uji: 2099-01; cuti uji memakai tanggal kerja masa depan, koreksi memakai tanggal kerja 30 hari terakhir. Cuti, koreksi, target, dan final KPI disimpan sebagai bukti dengan alasan [UAT], bukan dihapus setelah tes. Pengujian password hanya akun UAT dan dikembalikan ke password privat semula; akun kelas tidak diubah.
+
+Payroll global selalu memakai seluruh roster aktif, bukan satu departemen. Tanpa izin terpisah, penerbitan payroll diuji dalam transaksi database rollback-only, sehingga tidak membuat slip uji bagi akun kelas. Browser mock menguji dialog/readiness/slip; tes rollback menguji transaksi nyata. Jangan menyebut kombinasi ini sebagai payroll live end-to-end penuh.

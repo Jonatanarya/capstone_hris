@@ -54,6 +54,7 @@ if (ciDatabase) {
       ? ["0011_demo_workflows.sql"]
       : []),
     ...(process.argv.includes("--pending-kpi") ? ["0012_kpi.sql"] : []),
+    ...(process.argv.includes("--pending-kpi-goals") ? ["0013_kpi_goals.sql"] : []),
   ];
   const pending = pendingFiles
     .map((f) => read("supabase/migrations/" + f))

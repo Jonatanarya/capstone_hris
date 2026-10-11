@@ -13,7 +13,7 @@ export async function POST(
     const supabase = await createSupabaseServerClient();
     const actor = await getActor(supabase);
     assertActive(actor);
-    requireRole(actor, "MANAGER");
+    requireRole(actor, "MANAGER", "ADMIN_HR");
     const { id } = await context.params;
     if (!isUuid(id)) throw api.notFound();
     const body = (await readJson(request)) as Record<string, unknown>;
