@@ -2843,8 +2843,8 @@ export default function HrisApp({ today }: { today: string }) {
                     />
                   </label>
                   <p className="muted">
-                    Manager: tim departemen, selain diri sendiri/Manager. HR:
-                    pengajuan Manager atau departemen tanpa Manager aktif.
+                    Admin HR memutuskan pengajuan selain milik sendiri. Manager
+                    memantau pengajuan departemennya, tanpa aksi persetujuan.
                   </p>
                 </div>
               )}
@@ -4289,9 +4289,11 @@ export default function HrisApp({ today }: { today: string }) {
                   : "Ganti peran di kanan atas untuk mencoba Admin HR, Manager, atau Karyawan."}
               </p>
               <p>
-                Admin HR mengelola karyawan dan payroll. Manager memutuskan cuti
-                dan memberi penilaian tim departemennya. Karyawan dapat absen,
-                mengajukan cuti, serta melihat slip gaji.
+                Admin HR mengelola karyawan, cuti, payroll, dan penilaian KPI.
+                Manager membuat target bulanan dan memantau hasil tim serta
+                rekap. Karyawan dapat absen, mengajukan cuti, serta melihat
+                target, hasil KPI, dan slip gaji sendiri. Tes pelamar memakai
+                data fiktif.
               </p>
               <p>
                 {live
