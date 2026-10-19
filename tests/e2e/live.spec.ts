@@ -921,6 +921,11 @@ test("Manager shares monthly targets, HR evaluates and publishes with explicit r
   await expect(page.getByLabel("Karyawan KPI", { exact: true })).toHaveValue(
     target.id,
   );
+  await expect(page.locator(".kpi-editor input:visible")).toHaveCount(6);
+  await page
+    .locator("summary")
+    .filter({ hasText: "Pengaturan lanjutan indikator 1" })
+    .click();
   await page.getByLabel("Bobot 1", { exact: true }).fill("49");
   await expect(
     page.getByRole("button", { name: "Simpan draf target", exact: true }),
@@ -966,8 +971,10 @@ test("Manager shares monthly targets, HR evaluates and publishes with explicit r
   await page
     .getByRole("button", { name: "Isi realisasi KPI", exact: true })
     .click();
-  await expect(page.getByLabel("Target 1", { exact: true })).toBeDisabled();
-  await expect(page.getByLabel("Bobot 1", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Target 1", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Bobot 1", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".kpi-editor input:visible")).toHaveCount(3);
+  await expect(page.locator(".kpi-editor textarea:visible")).toHaveCount(1);
   for (const [i, actual] of [
     [1, 80],
     [2, 90],
@@ -976,10 +983,10 @@ test("Manager shares monthly targets, HR evaluates and publishes with explicit r
     await page
       .getByLabel(`Realisasi ${i}`, { exact: true })
       .fill(String(actual));
-    await page
-      .getByLabel(`Bukti realisasi ${i}`, { exact: true })
-      .fill("Data uji: daftar tugas bulan Oktober");
   }
+  await page
+    .getByLabel("Catatan bukti penilaian", { exact: true })
+    .fill("Data uji: daftar tugas bulan Oktober");
   await expect(
     page.getByText("Pratinjau nilai: 87", { exact: true }),
   ).toBeVisible();
@@ -988,15 +995,18 @@ test("Manager shares monthly targets, HR evaluates and publishes with explicit r
     fullPage: true,
   });
   await page
-    .getByRole("button", { name: "Simpan draf KPI", exact: true })
+    .getByRole("button", { name: "Simpan & terbitkan", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "Tutup editor", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Terbitkan KPI", exact: true })
-    .click();
   await expect(page.getByText(/Penilaian lama 50\/100/)).toBeVisible();
+  expect(
+    row!.indicators.every(
+      (item) => item.evidence === "Data uji: daftar tugas bulan Oktober",
+    ),
+  ).toBe(true);
+  expect(publishes).toBe(0);
   await page
     .getByRole("button", { name: "Ya, terbitkan KPI final", exact: true })
     .click();
@@ -1195,12 +1205,16 @@ test("HR cannot create targets and only evaluates shared server-authorized KPI",
   await expect(page.getByLabel("Karyawan KPI", { exact: true })).toHaveValue(
     member.id,
   );
-  await expect(
-    page.getByLabel("Cara mengukur 1", { exact: true }),
-  ).toContainText("Jumlah tugas selesai");
-  await expect(
-    page.getByLabel("Cara mengukur 1", { exact: true }),
-  ).toBeDisabled();
+  await expect(page.getByLabel("Cara mengukur 1", { exact: true })).toHaveCount(
+    0,
+  );
+  await page
+    .locator("summary")
+    .filter({ hasText: "Cara penilaian indikator 1" })
+    .click();
+  await expect(page.locator(".kpi-editor details[open]")).toContainText(
+    "Jumlah tugas selesai",
+  );
   await expect(page.getByLabel("Realisasi 1", { exact: true })).toBeEditable();
 });
 
@@ -1293,13 +1307,13 @@ test("HR sees missing KPI evidence, completes and saves it before publishing, an
     card.getByText("Belum bisa diterbitkan", { exact: true }),
   ).toBeVisible();
   await expect(
-    card.getByText("Lengkapi bukti realisasi indikator 1, 2, 3.", {
+    card.getByText("Isi satu catatan bukti untuk seluruh indikator.", {
       exact: true,
     }),
   ).toBeVisible();
   await expect(publish).toBeDisabled();
   await expect(publish).toHaveAccessibleDescription(
-    /Lengkapi bukti realisasi indikator 1, 2, 3/,
+    /Isi satu catatan bukti untuk seluruh indikator/,
   );
   await page.screenshot({
     path: test.info().outputPath("kpi-missing-evidence.png"),
@@ -1309,8 +1323,11 @@ test("HR sees missing KPI evidence, completes and saves it before publishing, an
     .getByRole("button", { name: "Isi realisasi KPI", exact: true })
     .click();
   await expect(
-    page.getByLabel("Bukti realisasi 1", { exact: true }),
+    page.getByLabel("Catatan bukti penilaian", { exact: true }),
   ).toBeFocused();
+  await page
+    .getByRole("button", { name: "Isi bukti per indikator", exact: true })
+    .click();
   await expect(page.getByLabel("Realisasi 1", { exact: true })).toHaveValue(
     "0",
   );
@@ -1369,6 +1386,221 @@ test("HR sees missing KPI evidence, completes and saves it before publishing, an
   expect(publishes).toBe(1);
   await expect(card.locator(".score")).toContainText("44");
   await expect(card.locator(".kpi-readiness")).toHaveCount(0);
+});
+
+test("simplified KPI saves once, preserves inputs after failure and never publishes before confirmation", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  let row: KpiDto = {
+    id: "a0000000-0000-4000-8000-000000000011",
+    employeeId: member.id,
+    employeeName: member.fullName,
+    period: "2026-10",
+    indicators: kpiTemplate().map((item) => ({ ...item, actual: 0 })),
+    notes: "Catatan lama tetap disimpan",
+    status: "DRAFT",
+    score: null,
+    version: 2,
+    publishedAt: null,
+    goalsSharedAt: "2026-10-01T00:00:00Z",
+  };
+  let failSave = true,
+    failReview = true,
+    saves = 0,
+    publishes = 0;
+  await page.route("**/api/v1/kpis**", async (route) => {
+    const request = route.request();
+    if (new URL(request.url()).pathname.endsWith("/targets")) {
+      await route.fulfill({
+        json: {
+          data: [{ id: member.id, name: member.fullName }],
+          meta: { totalPages: 1 },
+        },
+      });
+    } else if (request.method() === "PUT") {
+      saves++;
+      if (failSave) {
+        await route.fulfill({
+          status: 503,
+          json: {
+            error: {
+              code: "SERVICE_UNAVAILABLE",
+              message: "Penyimpanan KPI sedang gagal",
+            },
+            meta: {},
+          },
+        });
+        return;
+      }
+      const body = request.postDataJSON();
+      expect(body.expectedVersion).toBe(2);
+      expect(body.notes).toBe("Catatan lama tetap disimpan");
+      expect(
+        body.indicators.every(
+          (item: { actual: number; evidence: string }) =>
+            item.actual === 0 &&
+            item.evidence ===
+              "Bukti uji bersama: belum ada hasil pada periode ini.",
+        ),
+      ).toBe(true);
+      row = {
+        ...row,
+        indicators: body.indicators,
+        notes: body.notes,
+        version: 3,
+      };
+      await route.fulfill({ json: { data: row, meta: {} } });
+    } else if (request.method() === "POST") {
+      publishes++;
+      await route.fulfill({
+        status: 500,
+        json: {
+          error: {
+            code: "UNEXPECTED_WRITE",
+            message: "Tidak boleh terbit tanpa konfirmasi",
+          },
+          meta: {},
+        },
+      });
+    } else {
+      await route.fulfill({ json: { data: [row], meta: { totalPages: 1 } } });
+    }
+  });
+  await page.route("**/api/v1/performance-reviews?**", (route) =>
+    route.fulfill(
+      failReview
+        ? {
+            status: 503,
+            json: {
+              error: {
+                code: "SERVICE_UNAVAILABLE",
+                message: "Pemeriksaan penilaian lama belum tersedia",
+              },
+              meta: {},
+            },
+          }
+        : { json: { data: [], meta: { totalPages: 1 } } },
+    ),
+  );
+  await navigate(page, "KPI");
+  await page
+    .getByRole("button", { name: "Isi realisasi KPI", exact: true })
+    .click();
+  const savePublish = page.getByRole("button", {
+    name: "Simpan & terbitkan",
+    exact: true,
+  });
+  await expect(savePublish).toBeDisabled();
+  await page
+    .getByLabel("Catatan bukti penilaian", { exact: true })
+    .fill("Bukti uji bersama: belum ada hasil pada periode ini.");
+  await expect(savePublish).toBeEnabled();
+  await savePublish.click();
+  await expect(
+    page.getByText("Penyimpanan KPI sedang gagal", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Catatan bukti penilaian", { exact: true }),
+  ).toHaveValue("Bukti uji bersama: belum ada hasil pada periode ini.");
+  await expect(page.getByLabel("Realisasi 1", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(savePublish).toBeEnabled();
+  expect(saves).toBe(1);
+  failSave = false;
+  await savePublish.click();
+  await expect(
+    page.getByText(
+      "Draf sudah tersimpan. Pemeriksaan penilaian lama belum tersedia",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.locator(".kpi-card")).toContainText("Siap diterbitkan");
+  await expect(
+    page.locator(".kpi-card .kpi-note").filter({ hasText: "Catatan bukti:" }),
+  ).toHaveCount(1);
+  expect(saves).toBe(2);
+  expect(publishes).toBe(0);
+  failReview = false;
+  await page
+    .getByRole("button", { name: "Terbitkan KPI", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("Nilai 0/100");
+  await page.getByRole("button", { name: "Batal", exact: true }).click();
+  await expect(page.locator(".kpi-badge.final")).toHaveCount(0);
+  expect(publishes).toBe(0);
+});
+
+test("HR editing realisations keeps different legacy evidence and notes intact", async ({
+  page,
+}) => {
+  await loginWithMocks(page);
+  const evidence = [
+    "Daftar tugas Oktober",
+    "Catatan pemeriksaan kualitas",
+    "Rekap tenggat pekerjaan",
+  ];
+  let row: KpiDto = {
+    id: "a0000000-0000-4000-8000-000000000012",
+    employeeId: member.id,
+    employeeName: member.fullName,
+    period: "2026-10",
+    indicators: kpiTemplate().map((item, i) => ({
+      ...item,
+      actual: 80,
+      evidence: evidence[i],
+    })),
+    notes: "Evaluasi lama",
+    status: "DRAFT",
+    score: null,
+    version: 2,
+    publishedAt: null,
+    goalsSharedAt: "2026-10-01T00:00:00Z",
+  };
+  let saves = 0;
+  await page.route("**/api/v1/kpis**", async (route) => {
+    const request = route.request();
+    if (new URL(request.url()).pathname.endsWith("/targets")) {
+      await route.fulfill({
+        json: {
+          data: [{ id: member.id, name: member.fullName }],
+          meta: { totalPages: 1 },
+        },
+      });
+    } else if (request.method() === "PUT") {
+      const body = request.postDataJSON();
+      expect(
+        body.indicators.map((item: { evidence: string }) => item.evidence),
+      ).toEqual(evidence);
+      expect(body.indicators[0].actual).toBe(90);
+      expect(body.notes).toBe("Evaluasi lama");
+      row = { ...row, indicators: body.indicators, version: 3 };
+      saves++;
+      await route.fulfill({ json: { data: row, meta: {} } });
+    } else {
+      await route.fulfill({ json: { data: [row], meta: { totalPages: 1 } } });
+    }
+  });
+  await navigate(page, "KPI");
+  await page
+    .getByRole("button", { name: "Isi realisasi KPI", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Catatan bukti penilaian", { exact: true }),
+  ).toHaveCount(0);
+  for (let i = 0; i < evidence.length; i++)
+    await expect(
+      page.getByLabel(`Bukti realisasi ${i + 1}`, { exact: true }),
+    ).toHaveValue(evidence[i]);
+  await page.getByLabel("Realisasi 1", { exact: true }).fill("90");
+  await page
+    .getByRole("button", { name: "Simpan draf KPI", exact: true })
+    .click();
+  await expect(page.locator(".kpi-editor")).toHaveCount(0);
+  expect(saves).toBe(1);
+  for (const value of evidence)
+    await expect(page.locator(".kpi-card")).toContainText(value);
 });
 
 test("HR sees why unshared, self and unavailable KPI cannot be published", async ({

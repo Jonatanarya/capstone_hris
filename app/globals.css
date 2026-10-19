@@ -1540,6 +1540,8 @@ textarea {
   outline-offset: 2px;
 }
 .kpi-indicator {
+  display: grid;
+  gap: 12px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 16px;
@@ -1555,6 +1557,58 @@ textarea {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 8px;
+}
+.kpi-target-fields,
+.kpi-evaluation-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.kpi-target-summary {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+}
+.kpi-target-summary small {
+  color: #64748b;
+  font-size: 12px;
+}
+.kpi-target-summary strong {
+  font-size: 20px;
+  color: #1d4ed8;
+}
+.kpi-details {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.6;
+}
+.kpi-details summary {
+  cursor: pointer;
+  color: #1d4ed8;
+  padding: 6px 0;
+}
+.kpi-details[open] > :not(summary) {
+  margin-top: 10px;
+}
+.kpi-common-evidence {
+  display: grid;
+  gap: 8px;
+}
+.kpi-common-evidence > button {
+  justify-self: start;
+}
+.kpi-save-actions {
+  justify-content: flex-start;
+}
+@media (max-width: 640px) {
+  .kpi-evaluation-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .kpi-evaluation-row > label {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 .kpi-empty {
   display: grid;

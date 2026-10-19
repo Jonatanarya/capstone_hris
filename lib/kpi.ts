@@ -108,8 +108,16 @@ export function kpiScore(items: KpiIndicator[]): number | null {
     ),
   );
 }
+// A shared note is shown once. Distinct legacy evidence must remain distinct.
+export function commonKpiEvidence(items: KpiIndicator[]): string | null {
+  const first = items[0]?.evidence ?? "";
+  return items.every((item) => (item.evidence ?? "") === first) ? first : null;
+}
 // Drafts may be incomplete. These reasons gate publishing, not draft saves.
-export function kpiPublishIssues(items: KpiIndicator[]): string[] {
+export function kpiPublishIssues(
+  items: KpiIndicator[],
+  sharedEvidence = false,
+): string[] {
   if (!validateIndicators(items))
     return ["Periksa indikator dan realisasi. Total bobot wajib tepat 100%."];
   const actuals = items.flatMap((item, i) =>
@@ -123,7 +131,11 @@ export function kpiPublishIssues(items: KpiIndicator[]): string[] {
       ? [`Isi realisasi indikator ${actuals.join(", ")}.`]
       : []),
     ...(evidence.length
-      ? [`Lengkapi bukti realisasi indikator ${evidence.join(", ")}.`]
+      ? [
+          sharedEvidence
+            ? "Isi satu catatan bukti untuk seluruh indikator."
+            : `Lengkapi bukti realisasi indikator ${evidence.join(", ")}.`,
+        ]
       : []),
   ];
 }

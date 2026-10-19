@@ -17,6 +17,7 @@ import {
   kpiRating,
   kpiTemplate,
   kpiPublishIssues,
+  commonKpiEvidence,
   validateIndicators,
   type KpiDto,
   type KpiIndicator,
@@ -35,6 +36,7 @@ type Form = {
   indicators: KpiIndicator[];
   notes: string;
   version: number | null;
+  separateEvidence: boolean;
 };
 export function KpiWorkflows({
   role,
@@ -74,7 +76,7 @@ export function KpiWorkflows({
     >('[data-kpi-incomplete="true"]');
     if (incomplete) incomplete.focus();
     else editorRef.current?.scrollIntoView({ block: "start" });
-  }, [form?.employeeId]);
+  }, [form?.employeeId, form?.separateEvidence]);
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
     setLoading(true);
@@ -119,6 +121,7 @@ export function KpiWorkflows({
         : kpiTemplate(),
       notes: manager ? "" : (row?.notes ?? ""),
       version: row?.version ?? null,
+      separateEvidence: !!row && commonKpiEvidence(row.indicators) === null,
     });
   };
   const patch = (index: number, value: Partial<KpiIndicator>) =>
@@ -131,11 +134,29 @@ export function KpiWorkflows({
           ),
         },
     );
-  const save = async () => {
-    if (!form || busy) return;
+  const openPublishConfirmation = async (row: KpiDto) => {
+    const review = (await hrApi.performanceReviews(period)).find(
+      (r) => r.employeeId === row.employeeId,
+    );
+    setConfirm({
+      row,
+      reviewVersion: review?.version ?? null,
+      previousScore: review?.score ?? null,
+    });
+  };
+  const save = async (forPublication = false) => {
+    if (
+      !form ||
+      busy ||
+      !validateIndicators(form.indicators) ||
+      (forPublication &&
+        (!evaluator || kpiPublishIssues(form.indicators).length))
+    )
+      return;
     setBusy(true);
+    let saved: KpiDto | null = null;
     try {
-      await hrApi.saveKpi({
+      saved = await hrApi.saveKpi({
         employeeId: form.employeeId,
         period,
         indicators: form.indicators,
@@ -149,8 +170,9 @@ export function KpiWorkflows({
           : "Draf penilaian tersimpan. Nilai belum final.",
       );
       await load();
+      if (forPublication) await openPublishConfirmation(saved);
     } catch (e) {
-      toast.error(errorMessage(e));
+      toast.error((saved ? "Draf sudah tersimpan. " : "") + errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -178,14 +200,7 @@ export function KpiWorkflows({
     if (busy || form || kpiPublishIssues(row.indicators).length) return;
     setBusy(true);
     try {
-      const review = (await hrApi.performanceReviews(period)).find(
-        (r) => r.employeeId === row.employeeId,
-      );
-      setConfirm({
-        row,
-        reviewVersion: review?.version ?? null,
-        previousScore: review?.score ?? null,
-      });
+      await openPublishConfirmation(row);
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -233,6 +248,9 @@ export function KpiWorkflows({
         published.reduce((sum, r) => sum + r.score!, 0) / published.length,
       )
     : null;
+  const formIssues = form
+    ? kpiPublishIssues(form.indicators, !form.separateEvidence)
+    : [];
   return (
     <section className="kpi-page">
       <div className="panel kpi-intro">
@@ -368,228 +386,332 @@ export function KpiWorkflows({
                 </select>
               </label>
               <p className="kpi-help">
-                {rows.find((r) => r.employeeId === form.employeeId)
-                  ?.goalsSharedAt &&
-                  "Target sudah dibagikan dan terkunci. Lengkapi realisasi serta sumber bukti. "}
                 {manager
-                  ? "Sesuaikan indikator, target, bobot, dan cara mengukur. Penilaian dilakukan Admin HR setelah target dibagikan."
-                  : "Realisasi kosong berarti belum dinilai, bukan nol. Lengkapi bukti sebelum menerbitkan hasil."}
+                  ? "Sesuaikan nama dan target di bawah. Untuk KPI baru, tiga indikator contoh sudah disiapkan. Bobot dan cara hitung tersedia di Pengaturan lanjutan."
+                  : `Isi realisasi ${form.indicators.length} indikator, tulis catatan bukti, lalu Simpan & terbitkan. Target dan perhitungan sudah diatur Manager.`}
               </p>
               {form.indicators.map((item, i) => (
                 <fieldset key={i} className="kpi-indicator">
-                  <legend>Indikator {i + 1}</legend>
-                  <div className="kpi-fields">
-                    <label>
-                      Nama indikator
-                      <Input
-                        aria-label={`Nama indikator ${i + 1}`}
-                        required
-                        maxLength={120}
-                        value={item.name}
-                        disabled={busy || targetLocked}
-                        onChange={(e) => patch(i, { name: e.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Satuan
-                      <Input
-                        aria-label={`Satuan ${i + 1}`}
-                        required
-                        maxLength={30}
-                        value={item.unit}
-                        disabled={busy || targetLocked}
-                        onChange={(e) => patch(i, { unit: e.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Arah target
-                      <select
-                        aria-label={`Arah target ${i + 1}`}
-                        value={item.direction}
-                        disabled={busy || targetLocked}
-                        onChange={(e) =>
-                          patch(i, {
-                            direction: e.target
-                              .value as KpiIndicator["direction"],
-                          })
-                        }
-                      >
-                        <option value="HIGHER">Lebih tinggi lebih baik</option>
-                        <option value="LOWER">Lebih rendah lebih baik</option>
-                      </select>
-                    </label>
-                    <label>
-                      Target
-                      <Input
-                        aria-label={`Target ${i + 1}`}
-                        type="number"
-                        required
-                        min="0.000001"
-                        max="1000000000"
-                        step="any"
-                        value={item.target || ""}
-                        disabled={busy || targetLocked}
-                        onChange={(e) =>
-                          patch(i, { target: Number(e.target.value) })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Bobot (%)
-                      <Input
-                        aria-label={`Bobot ${i + 1}`}
-                        type="number"
-                        required
-                        min="1"
-                        max="100"
-                        step="1"
-                        value={item.weight || ""}
-                        disabled={busy || targetLocked}
-                        onChange={(e) =>
-                          patch(i, { weight: Number(e.target.value) })
-                        }
-                      />
-                    </label>
-                    {evaluator && (
+                  <legend>{manager ? `Indikator ${i + 1}` : item.name}</legend>
+                  {manager ? (
+                    <>
+                      <div className="kpi-target-fields">
+                        <label>
+                          Nama indikator
+                          <Input
+                            aria-label={`Nama indikator ${i + 1}`}
+                            required
+                            maxLength={120}
+                            value={item.name}
+                            disabled={busy || targetLocked}
+                            onChange={(e) => patch(i, { name: e.target.value })}
+                          />
+                        </label>
+                        <label>
+                          Target ({item.unit})
+                          <Input
+                            aria-label={`Target ${i + 1}`}
+                            type="number"
+                            required
+                            min="0.000001"
+                            max="1000000000"
+                            step="any"
+                            value={item.target || ""}
+                            disabled={busy || targetLocked}
+                            onChange={(e) =>
+                              patch(i, { target: Number(e.target.value) })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <details className="kpi-details">
+                        <summary>
+                          Pengaturan lanjutan indikator {i + 1} · Bobot{" "}
+                          {item.weight}%
+                        </summary>
+                        <div className="kpi-fields">
+                          <label>
+                            Satuan
+                            <Input
+                              aria-label={`Satuan ${i + 1}`}
+                              required
+                              maxLength={30}
+                              value={item.unit}
+                              disabled={busy || targetLocked}
+                              onChange={(e) =>
+                                patch(i, { unit: e.target.value })
+                              }
+                            />
+                          </label>
+                          <label>
+                            Arah target
+                            <select
+                              aria-label={`Arah target ${i + 1}`}
+                              value={item.direction}
+                              disabled={busy || targetLocked}
+                              onChange={(e) =>
+                                patch(i, {
+                                  direction: e.target
+                                    .value as KpiIndicator["direction"],
+                                })
+                              }
+                            >
+                              <option value="HIGHER">
+                                Lebih tinggi lebih baik
+                              </option>
+                              <option value="LOWER">
+                                Lebih rendah lebih baik
+                              </option>
+                            </select>
+                          </label>
+                          <label>
+                            Bobot (%)
+                            <Input
+                              aria-label={`Bobot ${i + 1}`}
+                              type="number"
+                              required
+                              min="1"
+                              max="100"
+                              step="1"
+                              value={item.weight || ""}
+                              disabled={busy || targetLocked}
+                              onChange={(e) =>
+                                patch(i, { weight: Number(e.target.value) })
+                              }
+                            />
+                          </label>
+                        </div>
+                        <label>
+                          Cara mengukur / sumber data
+                          <textarea
+                            aria-label={`Cara mengukur ${i + 1}`}
+                            maxLength={1000}
+                            value={item.measurement ?? ""}
+                            disabled={busy || targetLocked}
+                            onChange={(e) =>
+                              patch(i, { measurement: e.target.value })
+                            }
+                          />
+                        </label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={
+                            busy || form.indicators.length === 1 || targetLocked
+                          }
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              indicators: form.indicators.filter(
+                                (_, n) => n !== i,
+                              ),
+                            })
+                          }
+                        >
+                          Hapus indikator {i + 1}
+                        </Button>
+                      </details>
+                    </>
+                  ) : (
+                    <>
+                      <div className="kpi-evaluation-row">
+                        <div className="kpi-target-summary">
+                          <small>Target dari Manager</small>
+                          <strong>
+                            {item.target} {item.unit}
+                          </strong>
+                        </div>
+                        <label>
+                          Realisasi ({item.unit})
+                          <Input
+                            aria-label={`Realisasi ${i + 1}`}
+                            aria-describedby={
+                              item.actual === null
+                                ? `kpi-actual-${i}`
+                                : undefined
+                            }
+                            data-kpi-incomplete={
+                              item.actual === null || undefined
+                            }
+                            type="number"
+                            min="0"
+                            max="1000000000"
+                            step="any"
+                            placeholder="Isi hasilnya"
+                            value={item.actual ?? ""}
+                            disabled={busy}
+                            onChange={(e) =>
+                              patch(i, {
+                                actual:
+                                  e.target.value === ""
+                                    ? null
+                                    : Number(e.target.value),
+                              })
+                            }
+                          />
+                          {item.actual === null && (
+                            <small
+                              id={`kpi-actual-${i}`}
+                              className="kpi-field-hint"
+                            >
+                              Isi 0 jika tidak ada realisasi.
+                            </small>
+                          )}
+                        </label>
+                        <div className="kpi-target-summary">
+                          <small>Capaian otomatis</small>
+                          <strong>
+                            {indicatorScore(item)?.toFixed(0) ?? "—"}%
+                          </strong>
+                        </div>
+                      </div>
+                      {form.separateEvidence && (
+                        <label>
+                          Bukti realisasi {i + 1}
+                          <textarea
+                            aria-label={`Bukti realisasi ${i + 1}`}
+                            maxLength={1000}
+                            data-kpi-incomplete={
+                              !item.evidence?.trim() || undefined
+                            }
+                            value={item.evidence ?? ""}
+                            disabled={busy}
+                            placeholder="Keterangan singkat sumber penilaian, tidak perlu unggah file."
+                            onChange={(e) =>
+                              patch(i, { evidence: e.target.value })
+                            }
+                          />
+                        </label>
+                      )}
+                      <details className="kpi-details">
+                        <summary>Cara penilaian indikator {i + 1}</summary>
+                        <p>
+                          Bobot {item.weight}% ·{" "}
+                          {item.direction === "HIGHER"
+                            ? "Semakin tinggi semakin baik"
+                            : "Semakin rendah semakin baik"}
+                        </p>
+                        <p>{item.measurement}</p>
+                      </details>
+                    </>
+                  )}
+                </fieldset>
+              ))}
+              {manager && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={
+                    busy || form.indicators.length >= 10 || targetLocked
+                  }
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      indicators: [
+                        ...form.indicators,
+                        {
+                          name: "",
+                          unit: "%",
+                          direction: "HIGHER",
+                          target: 100,
+                          weight: 1,
+                          actual: null,
+                        },
+                      ],
+                    })
+                  }
+                >
+                  Tambah indikator
+                </Button>
+              )}
+              {evaluator && (
+                <>
+                  {!form.separateEvidence ? (
+                    <div className="kpi-common-evidence">
                       <label>
-                        Realisasi (wajib sebelum terbit)
-                        <Input
-                          aria-label={`Realisasi ${i + 1}`}
-                          aria-describedby={
-                            item.actual === null ? `kpi-actual-${i}` : undefined
-                          }
+                        Catatan bukti penilaian
+                        <textarea
+                          aria-label="Catatan bukti penilaian"
+                          maxLength={1000}
+                          aria-describedby="kpi-common-evidence-help"
                           data-kpi-incomplete={
-                            item.actual === null || undefined
+                            !commonKpiEvidence(form.indicators)?.trim() ||
+                            undefined
                           }
-                          type="number"
-                          min="0"
-                          max="1000000000"
-                          step="any"
-                          placeholder="Belum dinilai"
-                          value={item.actual ?? ""}
+                          value={commonKpiEvidence(form.indicators) ?? ""}
                           disabled={busy}
+                          placeholder="Contoh: Berdasarkan rekap tugas dan pemeriksaan hasil kerja bulan Oktober."
                           onChange={(e) =>
-                            patch(i, {
-                              actual:
-                                e.target.value === ""
-                                  ? null
-                                  : Number(e.target.value),
+                            setForm({
+                              ...form,
+                              indicators: form.indicators.map((item) => ({
+                                ...item,
+                                evidence: e.target.value,
+                              })),
                             })
                           }
                         />
-                        {item.actual === null && (
-                          <small
-                            id={`kpi-actual-${i}`}
-                            className="kpi-field-hint"
-                          >
-                            Belum diisi. Isi 0 jika memang tidak ada realisasi.
-                          </small>
-                        )}
                       </label>
-                    )}
-                  </div>
-                  <label>
-                    Cara mengukur / sumber data
-                    <textarea
-                      aria-label={`Cara mengukur ${i + 1}`}
-                      maxLength={1000}
-                      value={item.measurement ?? ""}
-                      disabled={busy || targetLocked}
-                      onChange={(e) =>
-                        patch(i, { measurement: e.target.value })
-                      }
-                    />
-                  </label>
-                  {evaluator && (
-                    <label>
-                      Bukti realisasi (wajib sebelum terbit)
-                      <textarea
-                        aria-label={`Bukti realisasi ${i + 1}`}
-                        aria-describedby={
-                          !item.evidence?.trim()
-                            ? `kpi-evidence-${i}`
-                            : undefined
-                        }
-                        data-kpi-incomplete={
-                          !item.evidence?.trim() || undefined
-                        }
-                        maxLength={1000}
-                        value={item.evidence ?? ""}
+                      <small id="kpi-common-evidence-help" className="kpi-help">
+                        Cukup isi sekali. Catatan ini menjadi bukti untuk semua
+                        indikator. Tidak perlu unggah file.
+                      </small>
+                      <Button
+                        type="button"
+                        variant="ghost"
                         disabled={busy}
-                        placeholder="Contoh: 8 dari 10 tugas selesai, daftar tugas Oktober. Jangan masukkan data sensitif."
-                        onChange={(e) => patch(i, { evidence: e.target.value })}
-                      />
-                      {!item.evidence?.trim() && (
-                        <small
-                          id={`kpi-evidence-${i}`}
-                          className="kpi-field-hint"
+                        onClick={() =>
+                          setForm({ ...form, separateEvidence: true })
+                        }
+                      >
+                        Isi bukti per indikator
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="kpi-help">
+                      <p>
+                        Bukti berbeda per indikator tetap dipertahankan.
+                        Lengkapi kolom bukti di atas.
+                      </p>
+                      {commonKpiEvidence(form.indicators) !== null && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() =>
+                            setForm({ ...form, separateEvidence: false })
+                          }
                         >
-                          Belum diisi. Tulis jumlah, periode, atau referensi
-                          dokumen; tidak perlu mengunggah file.
-                        </small>
+                          Gunakan satu catatan
+                        </Button>
                       )}
-                    </label>
+                    </div>
                   )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={
-                      busy || form.indicators.length === 1 || targetLocked
-                    }
-                    onClick={() =>
-                      setForm({
-                        ...form,
-                        indicators: form.indicators.filter((_, n) => n !== i),
-                      })
-                    }
-                  >
-                    Hapus indikator {i + 1}
-                  </Button>
-                </fieldset>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy || form.indicators.length >= 10 || targetLocked}
-                onClick={() =>
-                  setForm({
-                    ...form,
-                    indicators: [
-                      ...form.indicators,
-                      {
-                        name: "",
-                        unit: "%",
-                        direction: "HIGHER",
-                        target: 100,
-                        weight: 1,
-                        actual: null,
-                      },
-                    ],
-                  })
-                }
-              >
-                Tambah indikator
-              </Button>
-              {evaluator && (
-                <label>
-                  Catatan KPI
-                  <textarea
-                    aria-label="Catatan KPI"
-                    maxLength={2000}
-                    value={form.notes}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setForm({ ...form, notes: e.target.value })
-                    }
-                  />
-                </label>
+                  <details className="kpi-details">
+                    <summary>Catatan tambahan (opsional)</summary>
+                    <label>
+                      Catatan KPI
+                      <textarea
+                        aria-label="Catatan KPI"
+                        maxLength={2000}
+                        value={form.notes}
+                        disabled={busy}
+                        onChange={(e) =>
+                          setForm({ ...form, notes: e.target.value })
+                        }
+                      />
+                    </label>
+                  </details>
+                </>
               )}
               <div className="workflow-row">
-                <strong>
-                  Total bobot:{" "}
-                  {form.indicators.reduce((sum, i) => sum + i.weight, 0)}% /
-                  100%
-                </strong>
+                {manager && (
+                  <strong>
+                    Total bobot:{" "}
+                    {form.indicators.reduce((sum, i) => sum + i.weight, 0)}% /
+                    100%
+                  </strong>
+                )}
                 {evaluator && (
                   <span>
                     Pratinjau nilai:{" "}
@@ -604,11 +726,11 @@ export function KpiWorkflows({
               )}
               {evaluator && (
                 <div className="kpi-readiness" aria-live="polite">
-                  {kpiPublishIssues(form.indicators).length ? (
+                  {formIssues.length ? (
                     <>
                       <strong>Lengkapi sebelum diterbitkan</strong>
                       <ul>
-                        {kpiPublishIssues(form.indicators).map((issue) => (
+                        {formIssues.map((issue) => (
                           <li key={issue}>{issue}</li>
                         ))}
                       </ul>
@@ -616,22 +738,34 @@ export function KpiWorkflows({
                     </>
                   ) : (
                     <p>
-                      Realisasi dan bukti sudah lengkap. Simpan draf, lalu klik
-                      Terbitkan KPI pada kartu karyawan.
+                      Realisasi dan bukti sudah lengkap. Klik Simpan &
+                      terbitkan, lalu periksa konfirmasi nilai final.
                     </p>
                   )}
                 </div>
               )}
-              <Button
-                type="submit"
-                disabled={busy || !validateIndicators(form.indicators)}
-              >
-                {manager ? "Simpan draf target" : "Simpan draf KPI"}
-              </Button>
+              <div className="workflow-row kpi-save-actions">
+                {evaluator && (
+                  <Button
+                    type="button"
+                    disabled={busy || !!formIssues.length}
+                    onClick={() => void save(true)}
+                  >
+                    <CheckCircle2 size={16} /> Simpan & terbitkan
+                  </Button>
+                )}
+                <Button
+                  type="submit"
+                  variant={manager ? "default" : "outline"}
+                  disabled={busy || !validateIndicators(form.indicators)}
+                >
+                  {manager ? "Simpan draf target" : "Simpan draf KPI"}
+                </Button>
+              </div>
               <small>
                 {manager
                   ? "Bagikan target melalui kartu draf setelah disimpan."
-                  : "Terbitkan melalui kartu draf setelah semua perubahan disimpan."}
+                  : "Simpan draf jika belum selesai. Nilai hanya diterbitkan setelah Anda menyetujui konfirmasi."}
               </small>
             </form>
           )}
@@ -675,7 +809,11 @@ export function KpiWorkflows({
               ))}
             {rows.map((row) => {
               const canEvaluate = targets.some((e) => e.id === row.employeeId);
-              const publishIssues = kpiPublishIssues(row.indicators);
+              const commonEvidence = commonKpiEvidence(row.indicators);
+              const publishIssues = kpiPublishIssues(
+                row.indicators,
+                commonEvidence !== null,
+              );
               const readinessId = `kpi-readiness-${row.id}`;
               return (
                 <article className="panel kpi-card" key={row.id}>
@@ -703,25 +841,33 @@ export function KpiWorkflows({
                   {row.indicators.map((item, i) => (
                     <div className="kpi-result" key={i}>
                       <strong>{item.name}</strong>
-                      <small>
-                        Bobot {item.weight}% ·{" "}
-                        {item.direction === "HIGHER"
-                          ? "↑ Lebih tinggi"
-                          : "↓ Lebih rendah"}
-                      </small>
                       <div>
                         Target {item.target} {item.unit} · Realisasi{" "}
                         {item.actual ?? "—"} {item.unit}
                       </div>
-                      <small>
-                        Capaian {indicatorScore(item)?.toFixed(1) ?? "—"}%
-                      </small>
-                      {item.measurement && (
-                        <p>Cara mengukur: {item.measurement}</p>
+                      <details className="kpi-details">
+                        <summary>Detail penilaian</summary>
+                        <p>
+                          Bobot {item.weight}% ·{" "}
+                          {item.direction === "HIGHER"
+                            ? "↑ Lebih tinggi"
+                            : "↓ Lebih rendah"}
+                        </p>
+                        <p>
+                          Capaian {indicatorScore(item)?.toFixed(1) ?? "—"}%
+                        </p>
+                        {item.measurement && (
+                          <p>Cara mengukur: {item.measurement}</p>
+                        )}
+                      </details>
+                      {commonEvidence === null && item.evidence && (
+                        <p>Bukti: {item.evidence}</p>
                       )}
-                      {item.evidence && <p>Bukti: {item.evidence}</p>}
                     </div>
                   ))}
+                  {commonEvidence?.trim() && (
+                    <p className="kpi-note">Catatan bukti: {commonEvidence}</p>
+                  )}
                   {row.notes && <p className="kpi-note">{row.notes}</p>}
                   {row.publishedAt && (
                     <small>
@@ -888,9 +1034,13 @@ export function KpiWorkflows({
           <DialogHeader>
             <DialogTitle>Terbitkan KPI final?</DialogTitle>
             <DialogDescription>
-              Nilai {confirm ? kpiScore(confirm.row.indicators) : "—"}/100 akan
-              terlihat oleh karyawan dan menjadi nilai penilaian kinerja periode{" "}
-              {period}. Setelah final, indikator dan nilai tidak dapat diubah.
+              Nilai {confirm ? kpiScore(confirm.row.indicators) : "—"}/100 untuk{" "}
+              {confirm?.row.employeeName ||
+                employees.find((e) => e.id === confirm?.row.employeeId)?.name ||
+                "karyawan ini"}{" "}
+              akan terlihat oleh karyawan dan menjadi nilai penilaian kinerja
+              periode {period}. Setelah final, indikator dan nilai tidak dapat
+              diubah.
             </DialogDescription>
           </DialogHeader>
           {confirm?.previousScore !== null &&

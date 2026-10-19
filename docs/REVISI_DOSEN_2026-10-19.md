@@ -21,8 +21,8 @@ Manager bukan pengguna yang sepenuhnya tanpa aksi: ia tetap membuat target bulan
 1. Manager memilih bulan dan anggota tim, mengisi indikator, target, satuan, arah, bobot total 100%, serta cara mengukur.
 2. Simpan draf target, lalu bagikan dengan konfirmasi. Manager tidak mengisi realisasi, bukti, catatan penilaian, atau nilai.
 3. Setelah berbagi, target/bobot/cara ukur terkunci di API dan RPC. Karyawan dapat melihat snapshot target tanpa hasil draf.
-4. HR membuka kartu target yang sudah dibagikan, mengisi realisasi, bukti dan catatan, lalu menyimpan draf penilaian.
-5. HR menerbitkan hasil final dengan konfirmasi dan pemeriksaan versi. Nilai berbobot dihitung server; jika ada review lama, penggantian memerlukan konfirmasi eksplisit. Final tetap terkunci.
+4. HR membuka kartu target yang sudah dibagikan. Tampilan utama cukup angka realisasi per indikator dan satu catatan bukti yang berlaku untuk seluruh indikator; target/bobot/cara hitung hanya dibaca. Bukti lama yang berbeda tetap dibuka per indikator, tidak ditimpa otomatis. Catatan tambahan opsional.
+5. Tombol **Simpan & terbitkan** menyimpan draf lalu membuka konfirmasi dan pemeriksaan versi; tidak langsung menerbitkan tanpa persetujuan. **Simpan draf KPI** tetap tersedia untuk penilaian belum lengkap. Nilai berbobot dihitung server; jika ada review lama, penggantian memerlukan konfirmasi eksplisit. Final tetap terkunci. Manager mengubah bobot/arah/satuan/cara ukur lewat Pengaturan lanjutan, bukan kolom utama.
 6. Manager memantau KPI dan rekap departemen, karyawan melihat hasil final sendiri. KPI tidak otomatis mengubah gaji atau bonus.
 
 Endpoint penilaian angka manual lama ditutup. Data penilaian historis tidak dihapus dan ditandai sebagai **Penilaian lama** pada rekap. KPI final menjadi sumber nilai baru agar tidak ada dua penilaian paralel.

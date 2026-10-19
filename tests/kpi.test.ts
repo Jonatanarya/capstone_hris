@@ -5,6 +5,7 @@ import {
   kpiTemplate,
   kpiRating,
   kpiPublishIssues,
+  commonKpiEvidence,
   validateIndicators,
 } from "../lib/kpi";
 import { kpiPeriod } from "../lib/api/kpi";
@@ -46,6 +47,26 @@ describe("KPI weighted calculations and strict validation", () => {
     expect(kpiPublishIssues(items)).toEqual([
       "Lengkapi bukti realisasi indikator 1, 2, 3.",
     ]);
+    expect(kpiPublishIssues(items, true)).toEqual([
+      "Isi satu catatan bukti untuk seluruh indikator.",
+    ]);
+  });
+  it("shows shared evidence once without merging distinct or partially filled legacy evidence", () => {
+    const items = kpiTemplate();
+    expect(commonKpiEvidence(items)).toBe("");
+    items[0].evidence = "Catatan tugas Oktober";
+    expect(commonKpiEvidence(items)).toBeNull();
+    const shared = items.map((item) => ({
+      ...item,
+      actual: 80,
+      evidence: "Rekap tugas Oktober",
+    }));
+    expect(commonKpiEvidence(shared)).toBe("Rekap tugas Oktober");
+    expect(kpiPublishIssues(shared, true)).toEqual([]);
+    shared[1].evidence = "Hasil pemeriksaan kualitas";
+    expect(commonKpiEvidence(shared)).toBeNull();
+    expect(shared[0].evidence).toBe("Rekap tugas Oktober");
+    expect(kpiScore(shared)).toBe(80);
   });
   it("identifies missing actuals and blank evidence without treating zero as missing", () => {
     const items = kpiTemplate();

@@ -1238,3 +1238,9 @@ Detail aturan terbaru ada di [Revisi dosen](REVISI_DOSEN_2026-10-19.md). Bagian 
 | FR64 | Satu sumber penilaian baru | Final KPI menggantikan input nilai manual; penilaian lama tetap sebagai histori |
 
 Stack tetap Next.js + TypeScript + Vercel + Supabase. Pembatalan rencana Neon tidak mengubah data/database yang ada. Manager tetap memiliki layanan pribadi. Rekap memakai kalender/roster berjalan, bukan snapshot histori yang tidak dapat diubah. Model UML v3 tanggal 11 Oktober merupakan arsip sebelum revisi ini dan belum mencerminkan perubahan peran terbaru.
+
+### 28.1 Pengisian KPI sederhana
+
+Manager memulai dengan tiga indikator contoh, mengisi nama dan target. Bobot, satuan, arah, serta cara ukur tersedia pada Pengaturan lanjutan dan tetap divalidasi. HR cukup mengisi angka realisasi tiap indikator serta satu catatan bukti untuk seluruh indikator, tanpa mengedit target atau menghitung nilai sendiri. Frontend menerapkan catatan yang dimasukkan HR pada seluruh indikator; bukti lama yang berbeda tetap dipertahankan dalam mode per indikator. Tidak ada nilai/bukti yang diisi otomatis atau perubahan pada data historis.
+
+**Simpan & terbitkan** menyimpan draf dan membuka konfirmasi final. Penerbitan tetap menunggu persetujuan, memeriksa versi, dan menyimpan KPI/review secara atomik di server. **Simpan draf KPI** tetap bisa digunakan untuk penilaian belum lengkap. Bukti berbeda per indikator dan catatan tambahan tetap tersedia bila diperlukan. Perhitungan, pembagian role, larangan self-assessment, dan penguncian setelah final tidak berubah.
