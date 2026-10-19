@@ -86,6 +86,8 @@ Contoh: penyelesaian tugas target 100%, bobot 50%, realisasi 80%; kualitas targe
 
 Draf evaluasi tidak terlihat oleh karyawan pemilik. Target dibagikan tersimpan di kpi_goal_plans, tanpa actual/evidence/notes/score, dan memicu notifikasi. Migrasi additive 0014 membagi tugas Manager perencana dan HR penilai, memindahkan keputusan cuti ke HR, serta menambah rekap/pelamar. Manager dapat memantau draf tim sebagai pembaca, tetapi tidak mengubah realisasi atau menerbitkannya. Final immutable; simpan gagal mempertahankan editor dan simpan sukses menutupnya.
 
+Jika **Terbitkan KPI** belum aktif, lihat alasan di kartu karyawan. Realisasi dan bukti singkat wajib lengkap untuk setiap indikator; bukti dapat berupa jumlah, periode, atau referensi dokumen, tidak perlu unggah file. Klik **Isi realisasi KPI**, lengkapi kolom yang ditandai, lalu **Simpan draf KPI**. Kartu akan menampilkan **Siap diterbitkan**. Draf belum lengkap tetap boleh disimpan. Target yang belum dibagikan menunggu Manager; KPI milik HR sendiri harus dinilai Admin HR lain. Editor yang masih terbuka perlu disimpan atau ditutup sebelum penerbitan, agar perubahan tidak hilang.
+
 ## Gladi bersih terpisah
 
 Gunakan departemen **UAT Capstone 2026-10-11** dan tiga akun berlabel [UAT], bukan 40 akun kelas. Kredensial uji dibuat privat dan tidak disimpan dalam Git. Periode KPI uji: 2099-01; cuti uji memakai tanggal kerja masa depan, koreksi memakai tanggal kerja 30 hari terakhir. Cuti, koreksi, target, dan final KPI disimpan sebagai bukti dengan alasan [UAT], bukan dihapus setelah tes. Pengujian password hanya akun UAT dan dikembalikan ke password privat semula; akun kelas tidak diubah.

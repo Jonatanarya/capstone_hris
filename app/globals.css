@@ -1474,6 +1474,27 @@ textarea {
   font-size: 13px;
   line-height: 1.7;
 }
+.kpi-readiness {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #dbe2ed;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.kpi-readiness ul {
+  list-style: disc;
+  padding-left: 20px;
+}
+.kpi-field-hint {
+  color: #9a3412;
+  font-weight: 400;
+  line-height: 1.5;
+}
 .kpi-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

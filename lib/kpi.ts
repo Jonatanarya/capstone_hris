@@ -108,6 +108,25 @@ export function kpiScore(items: KpiIndicator[]): number | null {
     ),
   );
 }
+// Drafts may be incomplete. These reasons gate publishing, not draft saves.
+export function kpiPublishIssues(items: KpiIndicator[]): string[] {
+  if (!validateIndicators(items))
+    return ["Periksa indikator dan realisasi. Total bobot wajib tepat 100%."];
+  const actuals = items.flatMap((item, i) =>
+    item.actual === null ? [i + 1] : [],
+  );
+  const evidence = items.flatMap((item, i) =>
+    !item.evidence?.trim() ? [i + 1] : [],
+  );
+  return [
+    ...(actuals.length
+      ? [`Isi realisasi indikator ${actuals.join(", ")}.`]
+      : []),
+    ...(evidence.length
+      ? [`Lengkapi bukti realisasi indikator ${evidence.join(", ")}.`]
+      : []),
+  ];
+}
 export function kpiRating(score: number): string {
   return score >= 90
     ? "Sangat baik"

@@ -16,6 +16,7 @@ import {
   kpiScore,
   kpiRating,
   kpiTemplate,
+  kpiPublishIssues,
   validateIndicators,
   type KpiDto,
   type KpiIndicator,
@@ -64,7 +65,16 @@ export function KpiWorkflows({
   const [goals, setGoals] = useState<KpiGoalDto[]>([]);
   const [targets, setTargets] = useState<{ id: string; name: string }[]>([]);
   const [share, setShare] = useState<KpiDto | null>(null);
+  const editorRef = useRef<HTMLFormElement>(null);
   const requestSequence = useRef(0);
+  useEffect(() => {
+    if (!form?.employeeId) return;
+    const incomplete = editorRef.current?.querySelector<
+      HTMLInputElement | HTMLTextAreaElement
+    >('[data-kpi-incomplete="true"]');
+    if (incomplete) incomplete.focus();
+    else editorRef.current?.scrollIntoView({ block: "start" });
+  }, [form?.employeeId]);
   const load = useCallback(async () => {
     const sequence = ++requestSequence.current;
     setLoading(true);
@@ -165,7 +175,7 @@ export function KpiWorkflows({
     }
   };
   const preparePublish = async (row: KpiDto) => {
-    if (busy) return;
+    if (busy || form || kpiPublishIssues(row.indicators).length) return;
     setBusy(true);
     try {
       const review = (await hrApi.performanceReviews(period)).find(
@@ -314,6 +324,7 @@ export function KpiWorkflows({
         <>
           {form && editor && (
             <form
+              ref={editorRef}
               className="panel kpi-editor"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -441,9 +452,15 @@ export function KpiWorkflows({
                     </label>
                     {evaluator && (
                       <label>
-                        Realisasi
+                        Realisasi (wajib sebelum terbit)
                         <Input
                           aria-label={`Realisasi ${i + 1}`}
+                          aria-describedby={
+                            item.actual === null ? `kpi-actual-${i}` : undefined
+                          }
+                          data-kpi-incomplete={
+                            item.actual === null || undefined
+                          }
                           type="number"
                           min="0"
                           max="1000000000"
@@ -460,6 +477,14 @@ export function KpiWorkflows({
                             })
                           }
                         />
+                        {item.actual === null && (
+                          <small
+                            id={`kpi-actual-${i}`}
+                            className="kpi-field-hint"
+                          >
+                            Belum diisi. Isi 0 jika memang tidak ada realisasi.
+                          </small>
+                        )}
                       </label>
                     )}
                   </div>
@@ -477,15 +502,32 @@ export function KpiWorkflows({
                   </label>
                   {evaluator && (
                     <label>
-                      Bukti realisasi (jumlah, periode, atau referensi dokumen)
+                      Bukti realisasi (wajib sebelum terbit)
                       <textarea
                         aria-label={`Bukti realisasi ${i + 1}`}
+                        aria-describedby={
+                          !item.evidence?.trim()
+                            ? `kpi-evidence-${i}`
+                            : undefined
+                        }
+                        data-kpi-incomplete={
+                          !item.evidence?.trim() || undefined
+                        }
                         maxLength={1000}
                         value={item.evidence ?? ""}
                         disabled={busy}
                         placeholder="Contoh: 8 dari 10 tugas selesai, daftar tugas Oktober. Jangan masukkan data sensitif."
                         onChange={(e) => patch(i, { evidence: e.target.value })}
                       />
+                      {!item.evidence?.trim() && (
+                        <small
+                          id={`kpi-evidence-${i}`}
+                          className="kpi-field-hint"
+                        >
+                          Belum diisi. Tulis jumlah, periode, atau referensi
+                          dokumen; tidak perlu mengunggah file.
+                        </small>
+                      )}
                     </label>
                   )}
                   <Button
@@ -560,6 +602,26 @@ export function KpiWorkflows({
                   Isi indikator unik dan valid. Total bobot wajib tepat 100%.
                 </p>
               )}
+              {evaluator && (
+                <div className="kpi-readiness" aria-live="polite">
+                  {kpiPublishIssues(form.indicators).length ? (
+                    <>
+                      <strong>Lengkapi sebelum diterbitkan</strong>
+                      <ul>
+                        {kpiPublishIssues(form.indicators).map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                      </ul>
+                      <p>Draf tetap bisa disimpan meskipun belum lengkap.</p>
+                    </>
+                  ) : (
+                    <p>
+                      Realisasi dan bukti sudah lengkap. Simpan draf, lalu klik
+                      Terbitkan KPI pada kartu karyawan.
+                    </p>
+                  )}
+                </div>
+              )}
               <Button
                 type="submit"
                 disabled={busy || !validateIndicators(form.indicators)}
@@ -611,107 +673,164 @@ export function KpiWorkflows({
                   ))}
                 </article>
               ))}
-            {rows.map((row) => (
-              <article className="panel kpi-card" key={row.id}>
-                <div className="workflow-row">
-                  <h2>
-                    {row.employeeName ||
-                      employees.find((e) => e.id === row.employeeId)?.name ||
-                      "Karyawan"}
-                  </h2>
-                  <span
-                    className={`kpi-badge ${row.status === "PUBLISHED" ? "final" : ""}`}
-                  >
-                    {row.status === "PUBLISHED" ? "Final" : "Draf"}
-                  </span>
-                </div>
-                <div className="score">
-                  {row.score ?? kpiScore(row.indicators) ?? "—"}
-                  <span> / 100</span>
-                </div>
-                <p>
-                  {row.status === "PUBLISHED"
-                    ? kpiRating(row.score!)
-                    : "Pratinjau, belum diterbitkan"}
-                </p>
-                {row.indicators.map((item, i) => (
-                  <div className="kpi-result" key={i}>
-                    <strong>{item.name}</strong>
-                    <small>
-                      Bobot {item.weight}% ·{" "}
-                      {item.direction === "HIGHER"
-                        ? "↑ Lebih tinggi"
-                        : "↓ Lebih rendah"}
-                    </small>
-                    <div>
-                      Target {item.target} {item.unit} · Realisasi{" "}
-                      {item.actual ?? "—"} {item.unit}
-                    </div>
-                    <small>
-                      Capaian {indicatorScore(item)?.toFixed(1) ?? "—"}%
-                    </small>
-                    {item.measurement && (
-                      <p>Cara mengukur: {item.measurement}</p>
-                    )}
-                    {item.evidence && <p>Bukti: {item.evidence}</p>}
+            {rows.map((row) => {
+              const canEvaluate = targets.some((e) => e.id === row.employeeId);
+              const publishIssues = kpiPublishIssues(row.indicators);
+              const readinessId = `kpi-readiness-${row.id}`;
+              return (
+                <article className="panel kpi-card" key={row.id}>
+                  <div className="workflow-row">
+                    <h2>
+                      {row.employeeName ||
+                        employees.find((e) => e.id === row.employeeId)?.name ||
+                        "Karyawan"}
+                    </h2>
+                    <span
+                      className={`kpi-badge ${row.status === "PUBLISHED" ? "final" : ""}`}
+                    >
+                      {row.status === "PUBLISHED" ? "Final" : "Draf"}
+                    </span>
                   </div>
-                ))}
-                {row.notes && <p className="kpi-note">{row.notes}</p>}
-                {row.publishedAt && (
-                  <small>
-                    Final{" "}
-                    {new Date(row.publishedAt).toLocaleString("id-ID", {
-                      timeZone: "Asia/Jakarta",
-                    })}{" "}
-                    WIB · Terkunci
-                  </small>
-                )}
-                {editor &&
-                  targets.some((e) => e.id === row.employeeId) &&
-                  row.status === "DRAFT" &&
-                  (manager ? !row.goalsSharedAt : !!row.goalsSharedAt) && (
-                    <div className="workflow-row">
-                      {manager && !row.goalsSharedAt && (
-                        <Button
-                          variant="outline"
-                          disabled={
-                            busy ||
-                            !!form ||
-                            row.indicators.some((i) => !i.measurement?.trim())
-                          }
-                          onClick={() => setShare(row)}
-                        >
-                          Bagikan target KPI
-                        </Button>
+                  <div className="score">
+                    {row.score ?? kpiScore(row.indicators) ?? "—"}
+                    <span> / 100</span>
+                  </div>
+                  <p>
+                    {row.status === "PUBLISHED"
+                      ? kpiRating(row.score!)
+                      : "Pratinjau, belum diterbitkan"}
+                  </p>
+                  {row.indicators.map((item, i) => (
+                    <div className="kpi-result" key={i}>
+                      <strong>{item.name}</strong>
+                      <small>
+                        Bobot {item.weight}% ·{" "}
+                        {item.direction === "HIGHER"
+                          ? "↑ Lebih tinggi"
+                          : "↓ Lebih rendah"}
+                      </small>
+                      <div>
+                        Target {item.target} {item.unit} · Realisasi{" "}
+                        {item.actual ?? "—"} {item.unit}
+                      </div>
+                      <small>
+                        Capaian {indicatorScore(item)?.toFixed(1) ?? "—"}%
+                      </small>
+                      {item.measurement && (
+                        <p>Cara mengukur: {item.measurement}</p>
                       )}
-                      {row.goalsSharedAt && (
-                        <small>Target sudah dibagikan · Terkunci</small>
-                      )}
-                      <Button
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => edit(row.employeeId)}
-                      >
-                        {manager ? "Edit target bulanan" : "Isi realisasi KPI"}
-                      </Button>
-                      {evaluator && (
-                        <Button
-                          disabled={
-                            busy ||
-                            !row.goalsSharedAt ||
-                            row.indicators.some((i) => !i.evidence?.trim()) ||
-                            kpiScore(row.indicators) === null ||
-                            form?.employeeId === row.employeeId
-                          }
-                          onClick={() => void preparePublish(row)}
-                        >
-                          <CheckCircle2 size={16} /> Terbitkan KPI
-                        </Button>
+                      {item.evidence && <p>Bukti: {item.evidence}</p>}
+                    </div>
+                  ))}
+                  {row.notes && <p className="kpi-note">{row.notes}</p>}
+                  {row.publishedAt && (
+                    <small>
+                      Final{" "}
+                      {new Date(row.publishedAt).toLocaleString("id-ID", {
+                        timeZone: "Asia/Jakarta",
+                      })}{" "}
+                      WIB · Terkunci
+                    </small>
+                  )}
+                  {evaluator && row.status === "DRAFT" && (
+                    <div id={readinessId} className="kpi-readiness">
+                      {row.employeeId === ownId ? (
+                        <p>
+                          KPI diri sendiri hanya dapat dinilai dan diterbitkan
+                          oleh Admin HR lain.
+                        </p>
+                      ) : !canEvaluate ? (
+                        <p>
+                          Penilaian tidak tersedia untuk karyawan ini. Pastikan
+                          akun karyawan aktif dan termasuk cakupan penilaian
+                          Anda.
+                        </p>
+                      ) : !row.goalsSharedAt ? (
+                        <p>
+                          Menunggu Manager membagikan target. Setelah dibagikan,
+                          Admin HR dapat mengisi realisasi dan menerbitkan KPI.
+                        </p>
+                      ) : (
+                        <>
+                          <strong>
+                            {publishIssues.length || form
+                              ? "Belum bisa diterbitkan"
+                              : "Siap diterbitkan"}
+                          </strong>
+                          {!!publishIssues.length && (
+                            <>
+                              <ul>
+                                {publishIssues.map((issue) => (
+                                  <li key={issue}>{issue}</li>
+                                ))}
+                              </ul>
+                              <p>Klik Isi realisasi KPI untuk melengkapinya.</p>
+                            </>
+                          )}
+                          {form ? (
+                            <p>
+                              Editor sedang terbuka. Simpan draf atau tutup
+                              editor sebelum menerbitkan KPI.
+                            </p>
+                          ) : !publishIssues.length ? (
+                            <p>
+                              Realisasi dan bukti seluruh indikator sudah
+                              lengkap.
+                            </p>
+                          ) : null}
+                        </>
                       )}
                     </div>
                   )}
-              </article>
-            ))}
+                  {editor &&
+                    targets.some((e) => e.id === row.employeeId) &&
+                    row.status === "DRAFT" &&
+                    (manager ? !row.goalsSharedAt : !!row.goalsSharedAt) && (
+                      <div className="workflow-row">
+                        {manager && !row.goalsSharedAt && (
+                          <Button
+                            variant="outline"
+                            disabled={
+                              busy ||
+                              !!form ||
+                              row.indicators.some((i) => !i.measurement?.trim())
+                            }
+                            onClick={() => setShare(row)}
+                          >
+                            Bagikan target KPI
+                          </Button>
+                        )}
+                        {row.goalsSharedAt && (
+                          <small>Target sudah dibagikan · Terkunci</small>
+                        )}
+                        <Button
+                          variant="outline"
+                          disabled={busy || !!form}
+                          onClick={() => edit(row.employeeId)}
+                        >
+                          {manager
+                            ? "Edit target bulanan"
+                            : "Isi realisasi KPI"}
+                        </Button>
+                        {evaluator && (
+                          <Button
+                            aria-describedby={readinessId}
+                            disabled={
+                              busy ||
+                              !row.goalsSharedAt ||
+                              !!publishIssues.length ||
+                              !!form
+                            }
+                            onClick={() => void preparePublish(row)}
+                          >
+                            <CheckCircle2 size={16} /> Terbitkan KPI
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                </article>
+              );
+            })}
           </div>
         </>
       )}

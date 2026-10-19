@@ -4,6 +4,7 @@ import {
   kpiScore,
   kpiTemplate,
   kpiRating,
+  kpiPublishIssues,
   validateIndicators,
 } from "../lib/kpi";
 import { kpiPeriod } from "../lib/api/kpi";
@@ -37,6 +38,37 @@ describe("KPI weighted calculations and strict validation", () => {
       actual: [80, 90, 100][n],
     }));
     expect(kpiScore(items)).toBe(87);
+  });
+  it("explains why a valid scored draft is not ready to publish", () => {
+    const items = kpiTemplate().map((item) => ({ ...item, actual: 80 }));
+    expect(validateIndicators(items)).toBe(true);
+    expect(kpiScore(items)).toBe(80);
+    expect(kpiPublishIssues(items)).toEqual([
+      "Lengkapi bukti realisasi indikator 1, 2, 3.",
+    ]);
+  });
+  it("identifies missing actuals and blank evidence without treating zero as missing", () => {
+    const items = kpiTemplate();
+    items[0].actual = 0;
+    items[0].evidence = "Realisasi 0, catatan Oktober";
+    items[1].actual = 80;
+    items[1].evidence = "   ";
+    expect(kpiPublishIssues(items)).toEqual([
+      "Isi realisasi indikator 3.",
+      "Lengkapi bukti realisasi indikator 2, 3.",
+    ]);
+  });
+  it("only clears publishing issues when all actuals and evidence are valid", () => {
+    const items = kpiTemplate().map((item) => ({
+      ...item,
+      actual: 0,
+      evidence: "Catatan tugas periode Oktober",
+    }));
+    expect(kpiPublishIssues(items)).toEqual([]);
+    items[0].weight = 49;
+    expect(kpiPublishIssues(items)).toEqual([
+      "Periksa indikator dan realisasi. Total bobot wajib tepat 100%.",
+    ]);
   });
   it("caps above-target achievement and handles lower-is-better", () => {
     const items = [
