@@ -43,7 +43,7 @@ test("profil, pembatasan tim, dan layout tidak meluber", async ({
   await navigate(page, "Penilaian kinerja");
   await expect(
     page.getByRole("button", { name: "Beri penilaian" }),
-  ).toHaveCount(1);
+  ).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -207,9 +207,12 @@ test("tambah karyawan lengkap, duplikasi dan ubah master", async ({
 test("penolakan cuti punya alasan dan hasil kinerja terpisah per periode", async ({
   page,
 }) => {
-  await role(page, "Manager");
+  await role(page, "Admin HR");
   await navigate(page, "Pengajuan cuti");
-  await page.getByRole("button", { name: "Tolak", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Tolak", exact: true })
+    .first()
+    .click();
   await page
     .getByLabel("Alasan penolakan", { exact: true })
     .fill("Jadwal tim belum memungkinkan");
@@ -220,7 +223,10 @@ test("penolakan cuti punya alasan dan hasil kinerja terpisah per periode", async
   await navigate(page, "Penilaian kinerja");
   await page.getByRole("combobox", { name: "Periode penilaian" }).click();
   await page.getByRole("option", { name: "Oktober 2026", exact: true }).click();
-  await page.getByRole("button", { name: "Beri penilaian" }).click();
+  await page
+    .getByRole("button", { name: "Beri penilaian contoh", exact: true })
+    .nth(0)
+    .click();
   await page.getByLabel("Nilai (0 – 100)", { exact: true }).fill("94");
   await page.getByLabel("Catatan", { exact: true }).fill("Target tim tercapai");
   await page.getByRole("button", { name: "Simpan", exact: true }).click();

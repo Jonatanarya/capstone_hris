@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { kpiTemplate, kpiScore, type KpiDto } from "../../lib/kpi";
+import { readFile } from "node:fs/promises";
 const hr = {
   id: "e0000000-0000-4000-8000-000000000001",
   employeeNo: "EMP-001",
@@ -252,7 +253,9 @@ async function loginWithMocks(
     });
   });
   await page.goto("/");
-  await page.getByLabel("NIM / NPM", { exact: true }).fill(identifier);
+  await page
+    .getByLabel("Nomor Induk Karyawan", { exact: true })
+    .fill(identifier);
   await page
     .getByLabel("Password", { exact: true })
     .fill("local-mocked-not-a-real-password");
@@ -295,7 +298,7 @@ test("live edit uses complete detail, never zero salary from summary", async ({
     ),
   ).toBe(true);
 });
-test("numeric NIM login is submitted without HTML email validation", async ({
+test("numeric employee-number login is submitted without HTML email validation", async ({
   page,
 }) => {
   await loginWithMocks(page, false, "2300000001");
@@ -796,7 +799,7 @@ test("HR policy and audit screens provide real API loading and retry", async ({
   ).toBeVisible();
 });
 
-test("manager composes weighted KPI, saves draft and finalizes with explicit review replacement", async ({
+test("Manager shares monthly targets, HR evaluates and publishes with explicit review replacement", async ({
   page,
 }) => {
   await loginWithMocks(page, false, "dimas@example.test", undefined, "MANAGER");
@@ -835,9 +838,9 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
     if (request.method() === "PUT") {
       const body = request.postDataJSON();
       expect(body.employeeId).toBe(target.id);
-      expect(body.expectedVersion).toBeNull();
+      expect(body.expectedVersion).toBe(row ? 2 : null);
       expect(body.indicators.map((i: { actual: number }) => i.actual)).toEqual([
-        80, 90, 100,
+        ...(row ? [80, 90, 100] : [null, null, null]),
       ]);
       row = {
         id: "a0000000-0000-4000-8000-000000000001",
@@ -848,7 +851,8 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
         notes: body.notes,
         status: "DRAFT",
         score: null,
-        version: 1,
+        version: row ? 3 : 1,
+        goalsSharedAt: row?.goalsSharedAt ?? null,
         publishedAt: null,
       };
       await route.fulfill({ json: { data: row, meta: {} } });
@@ -856,7 +860,7 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
     }
     if (request.method() === "POST") {
       expect(request.postDataJSON()).toEqual({
-        expectedVersion: 2,
+        expectedVersion: 3,
         expectedReviewVersion: 3,
       });
       publishes++;
@@ -911,15 +915,59 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
     page.getByRole("button", { name: "Notifikasi", exact: true }),
   ).toBeVisible();
   await navigate(page, "KPI");
-  await page.getByRole("button", { name: "Susun KPI", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Susun target bulanan", exact: true })
+    .click();
   await expect(page.getByLabel("Karyawan KPI", { exact: true })).toHaveValue(
     target.id,
   );
   await page.getByLabel("Bobot 1", { exact: true }).fill("49");
   await expect(
-    page.getByRole("button", { name: "Simpan draf KPI", exact: true }),
+    page.getByRole("button", { name: "Simpan draf target", exact: true }),
   ).toBeDisabled();
   await page.getByLabel("Bobot 1", { exact: true }).fill("50");
+  await expect(page.getByLabel("Realisasi 1", { exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Simpan draf target", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Bagikan target KPI", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Ya, bagikan target KPI", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Edit target bulanan", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Terbitkan KPI", exact: true }),
+  ).toHaveCount(0);
+  await page.route("**/api/v1/me", (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          userId: "hr-user",
+          role: "ADMIN_HR",
+          accountStatus: "ACTIVE",
+          employee: hr,
+        },
+        meta: {},
+      },
+    }),
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Notifikasi", exact: true }),
+  ).toBeVisible();
+  await navigate(page, "KPI");
+  await expect(
+    page.getByRole("button", { name: "Susun target bulanan", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Isi realisasi KPI", exact: true })
+    .click();
+  await expect(page.getByLabel("Target 1", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Bobot 1", { exact: true })).toBeDisabled();
   for (const [i, actual] of [
     [1, 80],
     [2, 90],
@@ -945,12 +993,6 @@ test("manager composes weighted KPI, saves draft and finalizes with explicit rev
   await expect(
     page.getByRole("button", { name: "Tutup editor", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Bagikan target KPI", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Ya, bagikan target KPI", exact: true })
-    .click();
   await page
     .getByRole("button", { name: "Terbitkan KPI", exact: true })
     .click();
@@ -1044,8 +1086,8 @@ for (const role of ["EMPLOYEE", "ADMIN_HR"] as const)
       ).toHaveCount(0);
     else
       await expect(
-        page.getByRole("button", { name: "Susun KPI", exact: true }),
-      ).toBeDisabled();
+        page.getByRole("button", { name: "Susun target bulanan", exact: true }),
+      ).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Edit draf KPI", exact: true }),
     ).toHaveCount(0);
@@ -1106,7 +1148,7 @@ test("employee reads shared targets before final without draft evaluation contro
   ).toHaveCount(0);
 });
 
-test("HR composes KPI only for server-authorized Manager targets", async ({
+test("HR cannot create targets and only evaluates shared server-authorized KPI", async ({
   page,
 }) => {
   await loginWithMocks(page);
@@ -1118,8 +1160,35 @@ test("HR composes KPI only for server-authorized Manager targets", async ({
       },
     }),
   );
+  await page.route("**/api/v1/kpis?**", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          {
+            id: "shared1",
+            employeeId: member.id,
+            employeeName: member.fullName,
+            period: "2026-10",
+            indicators: kpiTemplate(),
+            notes: "",
+            status: "DRAFT",
+            score: null,
+            version: 2,
+            publishedAt: null,
+            goalsSharedAt: "2026-10-01T00:00:00Z",
+          },
+        ],
+        meta: { totalPages: 1 },
+      },
+    }),
+  );
   await navigate(page, "KPI");
-  await page.getByRole("button", { name: "Susun KPI", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Susun target bulanan", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Isi realisasi KPI", exact: true })
+    .click();
   await expect(
     page.getByLabel("Karyawan KPI", { exact: true }).locator("option"),
   ).toHaveCount(1);
@@ -1129,6 +1198,10 @@ test("HR composes KPI only for server-authorized Manager targets", async ({
   await expect(
     page.getByLabel("Cara mengukur 1", { exact: true }),
   ).toContainText("Jumlah tugas selesai");
+  await expect(
+    page.getByLabel("Cara mengukur 1", { exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("Realisasi 1", { exact: true })).toBeEditable();
 });
 
 test("KPI load failure is explicit and retryable", async ({ page }) => {
@@ -1163,3 +1236,154 @@ test("KPI load failure is explicit and retryable", async ({ page }) => {
     }),
   ).toBeVisible();
 });
+
+for (const role of ["ADMIN_HR", "MANAGER"] as const) {
+  test(`${role} reads monthly recap, filters and exports without counting unknown scores as zero`, async ({
+    page,
+  }) => {
+    await loginWithMocks(
+      page,
+      false,
+      role === "ADMIN_HR" ? hr.workEmail : member.workEmail,
+      undefined,
+      role,
+    );
+    await page.route("**/api/v1/monthly-performance?**", (route) =>
+      route.fulfill({
+        json: {
+          data: [null, 0, 100].map((score, i) => ({
+            employeeId: `recap-${i}`,
+            employeeNo: `EMP-R${i}`,
+            name: `Karyawan rekap ${i}`,
+            department: "Engineering",
+            employmentStatus: "ACTIVE",
+            period: new URL(route.request().url()).searchParams.get("period"),
+            workDays: 20,
+            presentDays: 18,
+            lateDays: 2,
+            annualLeaveDays: 1,
+            permissionDays: 0,
+            sickDays: 0,
+            absenceDays: 1,
+            incompleteDays: 1,
+            pendingCorrections: i,
+            score,
+            scoreSource: score === null ? null : "KPI",
+            kpiStatus: score === null ? "IN_REVIEW" : "FINAL",
+          })),
+          meta: { totalPages: 1 },
+        },
+      }),
+    );
+    await navigate(page, "Rekap bulanan");
+    await page.getByLabel("Periode rekap", { exact: true }).fill("2026-10");
+    await expect(page.locator(".revision-summary")).toContainText("50 / 100");
+    await expect(
+      page.getByRole("cell", { name: "Belum dinilai", exact: false }),
+    ).toHaveCount(1);
+    await page
+      .getByLabel("Cari karyawan pada rekap", { exact: true })
+      .fill("EMP-R1");
+    await expect(page.locator(".revision-table tbody tr")).toHaveCount(1);
+    await expect(page.locator(".revision-summary")).toContainText("0 / 100");
+    const downloadPromise = page.waitForEvent("download");
+    await page
+      .getByRole("button", { name: "Unduh rekap CSV", exact: true })
+      .click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain("2026-10");
+    const csv = await readFile((await download.path())!, "utf8");
+    expect(csv).toContain("EMP-R1");
+    expect(csv).not.toContain("EMP-R0");
+    await page.screenshot({
+      path: test.info().outputPath(`recap-${role}.png`),
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+  });
+  test(`${role} accesses clearly marked dummy applicant tests with correct editing controls`, async ({
+    page,
+  }) => {
+    await loginWithMocks(
+      page,
+      false,
+      role === "ADMIN_HR" ? hr.workEmail : member.workEmail,
+      undefined,
+      role,
+    );
+    let candidate = {
+      id: "a0000000-0000-4000-8000-000000000031",
+      full_name: "Pelamar Fiktif",
+      position_name: "Staff Administrasi",
+      applied_on: "2026-10-01",
+      aptitude_score: 90,
+      technical_score: 80,
+      interview_score: 70,
+      notes: "",
+      is_dummy: true,
+      version: 1,
+    };
+    await page.route("**/api/v1/applicants**", async (route) => {
+      if (route.request().method() === "PATCH") {
+        expect(role).toBe("ADMIN_HR");
+        const b = route.request().postDataJSON();
+        expect(b.expectedVersion).toBe(1);
+        candidate = {
+          ...candidate,
+          aptitude_score: b.aptitudeScore,
+          technical_score: b.technicalScore,
+          interview_score: b.interviewScore,
+          notes: b.notes,
+          version: 2,
+        };
+        await route.fulfill({ json: { data: candidate, meta: {} } });
+      } else
+        await route.fulfill({
+          json: { data: [candidate], meta: { totalPages: 1 } },
+        });
+    });
+    await navigate(page, "Tes pelamar");
+    await expect(page.getByText("Data Dummy", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "80 / 100", exact: true }),
+    ).toBeVisible();
+    if (role === "ADMIN_HR") {
+      await page
+        .getByRole("button", { name: "Edit skor Pelamar Fiktif", exact: true })
+        .click();
+      await page.getByLabel("Tes potensi", { exact: true }).fill("100");
+      await page
+        .getByRole("button", { name: "Simpan skor simulasi", exact: true })
+        .click();
+      await expect(page.getByRole("dialog")).toBeHidden();
+      await expect(
+        page.getByRole("cell", { name: "83 / 100", exact: true }),
+      ).toBeVisible();
+    } else
+      await expect(page.getByRole("button", { name: /Edit skor/ })).toHaveCount(
+        0,
+      );
+    await page
+      .getByLabel("Hasil seleksi simulasi", { exact: true })
+      .selectOption("Perlu evaluasi");
+    await expect(
+      page.getByText("Tidak ada pelamar sesuai filter.", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Hasil seleksi simulasi", { exact: true })
+      .selectOption("Semua");
+    await page.screenshot({
+      path: test.info().outputPath(`applicants-${role}.png`),
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+  });
+}

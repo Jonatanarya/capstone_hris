@@ -47,6 +47,11 @@ import { POST as publishKpi } from "../app/api/v1/kpis/[id]/publish/route";
 import { POST as shareKpi } from "../app/api/v1/kpis/[id]/share-goals/route";
 import { GET as goals } from "../app/api/v1/kpi-goals/route";
 import { GET as targets } from "../app/api/v1/kpis/targets/route";
+import { GET as monthlyReport } from "../app/api/v1/monthly-performance/route";
+import { GET as applicants } from "../app/api/v1/applicants/route";
+import { PATCH as editApplicant } from "../app/api/v1/applicants/[id]/route";
+import { POST as decideLeave } from "../app/api/v1/leave-requests/[id]/decision/route";
+import { PUT as manualReview } from "../app/api/v1/employees/[id]/performance-reviews/[period]/route";
 import { kpiTemplate } from "../lib/kpi";
 const id = "a0000000-0000-4000-8000-000000000001";
 const context = { params: Promise.resolve({ id }) };
@@ -125,6 +130,12 @@ describe("personal and HR workflow routes", () => {
           )
         ).status,
       ).toBe(200);
+      if (role === "ADMIN_HR") {
+        expect(
+          (await shareKpi(req({ expectedVersion: 1 }), context)).status,
+        ).toBe(403);
+        return;
+      }
       expect(
         (await shareKpi(req({ expectedVersion: "1" }), context)).status,
       ).toBe(422);
@@ -174,7 +185,7 @@ describe("personal and HR workflow routes", () => {
   });
   it("publish requires explicit review version and maps immutable final errors", async () => {
     mock.actor.mockResolvedValue({
-      role: "MANAGER",
+      role: "ADMIN_HR",
       accountStatus: "ACTIVE",
       employeeStatus: "ACTIVE",
       employeeId: id,
@@ -198,6 +209,126 @@ describe("personal and HR workflow routes", () => {
       p_id: id,
       p_expected_version: 1,
       p_expected_review_version: null,
+    });
+  });
+  it("Manager cannot score, publish, approve leave or use legacy manual scoring", async () => {
+    mock.actor.mockResolvedValue({
+      role: "MANAGER",
+      employeeId: id,
+      accountStatus: "ACTIVE",
+      employeeStatus: "ACTIVE",
+    });
+    const indicators = kpiTemplate().map((i) => ({ ...i, actual: 90 }));
+    expect(
+      (
+        await saveKpi(
+          req({
+            employeeId: id,
+            period: "2026-10",
+            indicators,
+            notes: "",
+            expectedVersion: null,
+          }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await publishKpi(
+          req({ expectedVersion: 1, expectedReviewVersion: null }),
+          context,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await decideLeave(
+          req({ decision: "APPROVED", expectedVersion: 1 }),
+          context,
+        )
+      ).status,
+    ).toBe(403);
+    expect((await manualReview()).status).toBe(403);
+    expect(mock.rpc).not.toHaveBeenCalled();
+  });
+  it("employees cannot access recruitment or the organization monthly report", async () => {
+    expect(
+      (await applicants(new Request("https://hris.test/api/v1/applicants")))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await monthlyReport(
+          new Request(
+            "https://hris.test/api/v1/monthly-performance?period=2026-10",
+          ),
+        )
+      ).status,
+    ).toBe(403);
+    expect(mock.from).not.toHaveBeenCalled();
+    expect(mock.rpc).not.toHaveBeenCalled();
+  });
+  it.each(["ADMIN_HR", "MANAGER"])(
+    "%s can read period-scoped monthly report",
+    async (role) => {
+      mock.actor.mockResolvedValue({
+        role,
+        employeeId: id,
+        accountStatus: "ACTIVE",
+        employeeStatus: "ACTIVE",
+      });
+      mock.rpc.mockResolvedValue({
+        data: [{ employeeId: id, score: null }],
+        error: null,
+      });
+      const response = await monthlyReport(
+        new Request(
+          "https://hris.test/api/v1/monthly-performance?period=2026-10&pageSize=1",
+        ),
+      );
+      expect(response.status).toBe(200);
+      expect(mock.rpc).toHaveBeenCalledWith("monthly_performance_report", {
+        p_period: "2026-10",
+      });
+      const body = (await response.json()) as {
+        data: { score: number | null }[];
+      };
+      expect(body.data[0].score).toBeNull();
+    },
+  );
+  it("only HR can edit applicant scores, with integer validation", async () => {
+    const body = {
+      aptitudeScore: 90,
+      technicalScore: 80,
+      interviewScore: 70,
+      notes: "Fiktif",
+      expectedVersion: 1,
+    };
+    mock.actor.mockResolvedValue({
+      role: "MANAGER",
+      employeeId: id,
+      accountStatus: "ACTIVE",
+      employeeStatus: "ACTIVE",
+    });
+    expect((await editApplicant(req(body), context)).status).toBe(403);
+    mock.actor.mockResolvedValue({
+      role: "ADMIN_HR",
+      employeeId: id,
+      accountStatus: "ACTIVE",
+      employeeStatus: "ACTIVE",
+    });
+    for (const aptitudeScore of [-1, 101, 1.5, "90", null])
+      expect(
+        (await editApplicant(req({ ...body, aptitudeScore }), context)).status,
+      ).toBe(422);
+    expect((await editApplicant(req(body), context)).status).toBe(200);
+    expect(mock.rpc).toHaveBeenCalledWith("update_demo_applicant", {
+      p_id: id,
+      p_aptitude: 90,
+      p_technical: 80,
+      p_interview: 70,
+      p_notes: "Fiktif",
+      p_expected_version: 1,
     });
   });
   it("changes own password only after verifying current credentials", async () => {

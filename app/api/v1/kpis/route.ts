@@ -62,6 +62,14 @@ export async function PUT(request: Request) {
       });
     if (typeof body.notes !== "string" || body.notes.length > 2000)
       throw api.validation({ notes: ["Catatan maksimal 2000 karakter"] });
+    if (
+      actor.role === "MANAGER" &&
+      (body.notes.trim() ||
+        body.indicators.some((i) => i.actual !== null || i.evidence?.trim()))
+    )
+      throw api.forbidden(
+        "Manager menetapkan target; realisasi dan penilaian diisi Admin HR.",
+      );
     const version =
       body.expectedVersion === null
         ? null

@@ -1570,6 +1570,116 @@ textarea {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.revision-page {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.revision-intro {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+.revision-intro h2 {
+  font-size: 20px;
+  font-weight: 650;
+}
+.revision-intro p {
+  color: #64748b;
+}
+.revision-toolbar {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.revision-toolbar > input {
+  width: 250px;
+  max-width: 100%;
+}
+.revision-toolbar label,
+.revision-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #475569;
+}
+.revision-toolbar select {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: white;
+  max-width: 100%;
+}
+.revision-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.revision-summary .panel {
+  padding: 20px;
+  display: grid;
+  gap: 8px;
+}
+.revision-summary small {
+  color: #64748b;
+}
+.revision-summary strong {
+  font-size: 26px;
+  color: #1e293b;
+}
+.revision-summary strong.revision-role {
+  font-size: 18px;
+}
+.revision-note {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.revision-table {
+  overflow: hidden;
+  min-width: 0;
+}
+.revision-table .revision-note {
+  padding: 16px 20px;
+}
+.revision-table td {
+  vertical-align: top;
+}
+.revision-table td:first-child {
+  min-width: 180px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.revision-form {
+  display: grid;
+  gap: 14px;
+}
+.revision-form textarea {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 90px;
+  width: 100%;
+}
+@media (max-width: 767px) {
+  .revision-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .revision-intro {
+    padding: 16px;
+  }
+  .revision-intro .workflow-row {
+    flex-wrap: wrap;
+  }
+  .revision-toolbar > input,
+  .revision-toolbar > label,
+  .revision-toolbar > select {
+    width: 100%;
+  }
+}
 @media (max-width: 767px) {
   .kpi-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));

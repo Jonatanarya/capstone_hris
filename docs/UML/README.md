@@ -1,5 +1,7 @@
 # UML revisi HRIS - 11 Oktober 2026
 
+> Arsip sebelum revisi dosen 19 Oktober 2026. PDF/model v3 belum mencerminkan Manager sebagai pembuat target saja, HR sebagai penilai/pemutus cuti, rekap bulanan, dan tes pelamar. Untuk aturan aplikasi terbaru gunakan [revisi dosen](../REVISI_DOSEN_2026-10-19.md); jangan menjadikan diagram lama sebagai acuan otorisasi.
+
 Paket ini melengkapi model akademik lama di folder UML proyek, tanpa menimpa .oom/.oob maupun PDF asli. Acuan: PRD bagian 23 dan 27, route API, migrasi 0001–0013.
 
 - [Laporan PDF](../../output/pdf/UML_Revisi_HRIS_v3.pdf): perencanaan, Use Case per role, Activity cuti/KPI, Sequence cuti/payroll/KPI, Class Diagram domain, dan keterlacakan FR.

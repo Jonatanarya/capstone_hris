@@ -289,7 +289,7 @@ export function PersonalServices({
       await hrApi.changePassword(String(data.get("current")), next);
       form.reset();
       toast.success(
-        "Password diubah. Silakan masuk kembali dengan NIM dan password baru.",
+        "Password diubah. Silakan masuk kembali dengan Nomor Induk Karyawan dan password baru.",
       );
       window.location.reload();
     } catch (e) {
@@ -444,7 +444,7 @@ export function PersonalServices({
           </h2>
         </div>
         <p className="muted">
-          Opsional untuk demo. NIM tetap menjadi identitas login. Alias
+          Opsional untuk demo. Nomor Induk Karyawan menjadi identitas login. Alias
           @example.test bukan kotak masuk; reset lewat email tidak tersedia
           untuk alias demo tersebut.
         </p>

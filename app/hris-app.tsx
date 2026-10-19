@@ -85,6 +85,8 @@ import {
 } from "@/lib/hris";
 import { isLiveMode } from "@/lib/api-mode";
 import { KpiWorkflows } from "./kpi-workflows";
+import { MonthlyPerformance, Recruitment } from "./lecturer-workflows";
+import type { MonthlyReportRow } from "@/lib/lecturer-revision";
 import { payrollNet, salaryConfigured } from "@/lib/payroll";
 import { attendanceLabel, isWorkingDate, offsetDate } from "@/lib/workflows";
 import {
@@ -217,6 +219,8 @@ const menu = [
   { id: "payroll", label: "Payroll", icon: Wallet },
   { id: "performance", label: "Penilaian kinerja", icon: ChartNoAxesCombined },
   { id: "kpi", label: "KPI", icon: TrendingUp },
+  { id: "monthly", label: "Rekap bulanan", icon: ChartNoAxesCombined },
+  { id: "recruitment", label: "Tes pelamar", icon: BriefcaseBusiness },
   { id: "reports", label: "Laporan", icon: Files },
   { id: "departments", label: "Departemen", icon: Building2 },
   { id: "positions", label: "Jabatan", icon: BriefcaseBusiness },
@@ -506,6 +510,8 @@ export default function HrisApp({ today }: { today: string }) {
                 "attendance",
                 "leave",
                 "performance",
+                "monthly",
+                "recruitment",
                 "profile",
               ].includes(n.id)
             : [
@@ -523,7 +529,11 @@ export default function HrisApp({ today }: { today: string }) {
       team.some((p) => p.id === l.employee),
     ),
     pending = visibleLeaves.filter(
-      (l) => l.status === "Menunggu" && (!live || l.canDecide),
+      (l) =>
+        l.status === "Menunggu" &&
+        (live
+          ? l.canDecide
+          : role === "Admin HR" && l.employee !== currentUser.id),
     );
   const displayedLeaves = visibleLeaves.filter(
     (l) => !ownLeavesOnly || l.employee === currentUser.id,
@@ -1377,7 +1387,7 @@ export default function HrisApp({ today }: { today: string }) {
   const approve = (id: string, status: string) => {
     const request = leaves.find((l) => l.id === id);
     if (
-      (live ? !request?.canDecide : role !== "Manager") ||
+      (live ? !request?.canDecide : role !== "Admin HR") ||
       !request ||
       request.status !== "Menunggu" ||
       request.employee === currentUser.id ||
@@ -1699,9 +1709,8 @@ export default function HrisApp({ today }: { today: string }) {
       const score = Number(f.get("score")),
         notes = String(f.get("notes")).trim();
       if (
-        role !== "Manager" ||
+        role !== "Admin HR" ||
         selected.id === currentUser.id ||
-        selected.dept !== currentUser.dept ||
         selected.status !== "Aktif" ||
         !Number.isFinite(score) ||
         score < 0 ||
@@ -1737,7 +1746,7 @@ export default function HrisApp({ today }: { today: string }) {
       }));
     } else if (dialog === "reject") {
       const reason = String(f.get("reason")).trim();
-      if (!reason || role !== "Manager") {
+      if (!reason || role !== "Admin HR") {
         toast.error("Alasan penolakan wajib diisi");
         return;
       }
@@ -1889,12 +1898,12 @@ export default function HrisApp({ today }: { today: string }) {
           <p>Kelola tim dan aktivitas kerja dalam satu ruang.</p>
           <form onSubmit={signIn}>
             <label>
-              NIM / NPM
+              Nomor Induk Karyawan
               <Input
                 type="text"
                 required
                 maxLength={254}
-                placeholder="Masukkan NIM / NPM"
+                placeholder="Masukkan Nomor Induk Karyawan"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="username"
@@ -1933,7 +1942,7 @@ export default function HrisApp({ today }: { today: string }) {
               onClick={async () => {
                 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
                   toast.error(
-                    "Akun NIM/NPM demo: hubungi Admin HR untuk reset kata sandi. Pemulihan email hanya untuk akun dengan alamat email aktif.",
+                    "Akun demo: hubungi Admin HR untuk reset kata sandi. Pemulihan email hanya untuk akun dengan alamat email aktif.",
                   );
                   return;
                 }
@@ -1957,7 +1966,7 @@ export default function HrisApp({ today }: { today: string }) {
           )}
           <small>
             {live
-              ? "Masuk dengan NIM/NPM · akun lama tetap bisa memakai email"
+              ? "Masuk dengan Nomor Induk Karyawan · akun lama tetap bisa memakai email"
               : "Mode demo frontend · akun dan data contoh"}
           </small>
         </div>
@@ -2521,9 +2530,14 @@ export default function HrisApp({ today }: { today: string }) {
                       },
                       {
                         label:
-                          role === "Manager" ? "Penilaian tim" : "Slip gaji",
+                          role === "Manager" ? "Target bulanan" : "Slip gaji",
                         icon: Wallet,
-                        target: role === "Manager" ? "performance" : "payroll",
+                        target:
+                          role === "Manager"
+                            ? live
+                              ? "kpi"
+                              : "monthly"
+                            : "payroll",
                       },
                       {
                         label:
@@ -2895,7 +2909,7 @@ export default function HrisApp({ today }: { today: string }) {
                           )}
                         </TableCell>
                         <TableCell>
-                          {(live ? l.canDecide : role === "Manager") &&
+                          {(live ? l.canDecide : role === "Admin HR") &&
                           l.employee !== currentUser.id &&
                           l.status === "Menunggu" ? (
                             <div className="inline-actions">
@@ -3237,17 +3251,22 @@ export default function HrisApp({ today }: { today: string }) {
                         Lihat KPI final
                       </Button>
                     )}
-                    {role === "Manager" &&
+                    {role === "Admin HR" &&
                       p.id !== currentUser.id &&
                       !reviewFor(p)?.kpiId && (
                         <Button
                           variant="outline"
                           onClick={() => {
-                            setSelected(p);
-                            setDialog("review");
+                            if (live) setView("kpi");
+                            else {
+                              setSelected(p);
+                              setDialog("review");
+                            }
                           }}
                         >
-                          Beri penilaian
+                          {live
+                            ? "Kelola penilaian KPI"
+                            : "Beri penilaian contoh"}
                         </Button>
                       )}
                   </Panel>
@@ -3547,6 +3566,92 @@ export default function HrisApp({ today }: { today: string }) {
             <PolicySettings onSaved={setPolicy} />
           )}
           {live && role === "Admin HR" && view === "audit" && <AuditLog />}
+          {role !== "Karyawan" && view === "monthly" && (
+            <MonthlyPerformance
+              role={role}
+              live={live}
+              period={periodFromLabel(period)!}
+              onPeriod={(value) => setPeriod(labelFromPeriod(value))}
+              demoRows={
+                live
+                  ? []
+                  : team.map((p): MonthlyReportRow => {
+                      const month = periodFromLabel(period)!;
+                      const start = `${month}-01`;
+                      const end = new Date(`${start}T00:00:00Z`);
+                      end.setUTCMonth(end.getUTCMonth() + 1);
+                      end.setUTCDate(0);
+                      const last =
+                        end.toISOString().slice(0, 10) < today
+                          ? end.toISOString().slice(0, 10)
+                          : offsetDate(today, -1);
+                      const attendance = records.filter(
+                        (r) =>
+                          r.employee === p.id &&
+                          r.date.slice(0, 7) === month &&
+                          r.checkIn,
+                      );
+                      const approvedDays = (type: string) =>
+                        leaves
+                          .filter(
+                            (l) =>
+                              l.employee === p.id &&
+                              l.status === "Disetujui" &&
+                              l.type === type,
+                          )
+                          .reduce(
+                            (s, l) =>
+                              s +
+                              workingDays(
+                                l.start > start ? l.start : start,
+                                l.end < last ? l.end : last,
+                              ),
+                            0,
+                          );
+                      const annualLeaveDays = approvedDays("Cuti tahunan"),
+                        permissionDays = approvedDays("Izin"),
+                        sickDays = approvedDays("Sakit");
+                      const workDays = workingDays(
+                        p.joinDate > start ? p.joinDate : start,
+                        last,
+                      );
+                      return {
+                        employeeId: p.id,
+                        employeeNo: p.employeeNo,
+                        name: p.name,
+                        department: p.dept,
+                        employmentStatus:
+                          p.status === "Aktif" ? "ACTIVE" : "INACTIVE",
+                        period: month,
+                        workDays,
+                        presentDays: attendance.length,
+                        lateDays: attendance.filter((r) => r.checkIn > "08:00")
+                          .length,
+                        annualLeaveDays,
+                        permissionDays,
+                        sickDays,
+                        absenceDays: Math.max(
+                          0,
+                          workDays -
+                            attendance.length -
+                            annualLeaveDays -
+                            permissionDays -
+                            sickDays,
+                        ),
+                        incompleteDays: attendance.filter((r) => !r.checkOut)
+                          .length,
+                        pendingCorrections: 0,
+                        score: reviewFor(p)?.score ?? null,
+                        scoreSource: reviewFor(p) ? "LEGACY" : null,
+                        kpiStatus: "NO_TARGET",
+                      };
+                    })
+              }
+            />
+          )}
+          {role !== "Karyawan" && view === "recruitment" && (
+            <Recruitment role={role} live={live} />
+          )}
           {live && view === "kpi" && (
             <KpiWorkflows
               role={role}

@@ -25,7 +25,9 @@ export async function POST(request: Request) {
       ) ||
       (body.identifier !== undefined && body.email !== undefined)
     )
-      throw api.validation({ identifier: ["Gunakan satu NIM/NPM atau email"] });
+      throw api.validation({
+        identifier: ["Gunakan satu Nomor Induk Karyawan atau email"],
+      });
     const rawIdentifier = body.identifier ?? body.email;
     const identifier =
       typeof rawIdentifier === "string" ? rawIdentifier.trim() : "";
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
     const fieldErrors: Record<string, string[]> = {};
     if (!identifier || identifier.length > 254)
       fieldErrors.identifier = [
-        "NIM/NPM atau email wajib diisi (maksimal 254 karakter)",
+        "Nomor Induk Karyawan atau email wajib diisi (maksimal 254 karakter)",
       ];
     if (!password) fieldErrors.password = ["Kata sandi wajib diisi"];
     if (password.length > 128) fieldErrors.password = ["Maksimal 128 karakter"];

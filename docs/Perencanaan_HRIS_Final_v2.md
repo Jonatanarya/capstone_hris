@@ -1,5 +1,7 @@
 # DOKUMEN PERENCANAAN SISTEM HRIS
 
+> Revisi dosen 19 Oktober 2026: tetap memakai Supabase. Pembagian peran terbaru adalah Manager menyusun target, Admin HR mengelola operasional dan menilai KPI. Lihat Bagian 28; uraian lama yang bertentangan menjadi riwayat rancangan.
+
 > Status implementasi diperbarui 11 Oktober 2026: demo akademik sudah menggunakan Next.js, Vercel dan Supabase (autentikasi/persistensi/RLS). Uraian tahap frontend-only lama tetap menjadi riwayat rancangan; Bagian 27 dan [panduan demo](DEMO_CAPSTONE.md) menggantikan batas implementasi lama bila bertentangan.
 
 ## Human Resource Information System (HRIS) Berbasis Web untuk Pengelolaan Data dan Aktivitas Karyawan
@@ -1219,3 +1221,20 @@ Kategori demo: ≥90 Sangat baik, ≥75 Baik, ≥60 Cukup, sisanya Perlu peningk
 Atas persetujuan pengguna, tepat 40 akun kelas memakai gaji pokok contoh Rp3.000.000/bulan. Ini bukan gaji nyata; password NIM, role, gaji akun lama, dan payroll historis tidak diubah. Tiga akun berlabel [UAT] pada departemen UAT Capstone 2026-10-11 digunakan untuk transaksi uji terpisah. Payroll mencakup seluruh roster aktif: uji penerbitannya harus rollback atau mendapat izin terpisah sebelum membuat slip uji bagi akun kelas.
 
 Paket UML revisi dan skenario demo ada di docs/UML dan docs/DEMO_CAPSTONE.md; model .oom/.oob lama tetap dipertahankan sebagai arsip. Koreksi final KPI, delegasi, metrik operasional otomatis, prorata, BPJS/pajak, dan pembayaran nyata berada di luar demo.
+
+## 28. Revisi Dosen (19 Oktober 2026)
+
+Detail aturan terbaru ada di [Revisi dosen](REVISI_DOSEN_2026-10-19.md). Bagian ini menggantikan peran persetujuan/penilaian, batas rekrutmen, dan istilah login yang bertentangan pada bagian sebelumnya.
+
+| ID | Kebutuhan revisi | Aturan |
+| --- | --- | --- |
+| FR57 | Nomor Induk Karyawan | Label login menggantikan NIM/NPM; nilai nomor akun dan sandi lama dipertahankan |
+| FR58 | Manager menetapkan target | Draf dan berbagi target bulanan anggota departemen; tidak mengisi realisasi/nilai |
+| FR59 | HR menilai KPI | HR mengisi realisasi/bukti berdasarkan target dibagikan dan menerbitkan final; target tidak diubah, tidak menilai diri sendiri |
+| FR60 | HR menangani operasional cuti | HR memutuskan pengajuan selain milik sendiri; Manager membaca/pantau |
+| FR61 | Rekap bulanan terintegrasi | Data karyawan, kehadiran/cuti/izin/sakit, keterlambatan, koreksi, nilai dan status KPI; filter dan CSV |
+| FR62 | Nilai kosong bukan nol | Belum dinilai tidak masuk rata-rata; nilai 0 yang sah tetap dihitung |
+| FR63 | Tes pelamar simulasi | 20 pelamar fiktif, tiga skor 0–100, rata-rata; HR edit dan Manager baca; tidak otomatis menjadi karyawan |
+| FR64 | Satu sumber penilaian baru | Final KPI menggantikan input nilai manual; penilaian lama tetap sebagai histori |
+
+Stack tetap Next.js + TypeScript + Vercel + Supabase. Pembatalan rencana Neon tidak mengubah data/database yang ada. Manager tetap memiliki layanan pribadi. Rekap memakai kalender/roster berjalan, bukan snapshot histori yang tidak dapat diubah. Model UML v3 tanggal 11 Oktober merupakan arsip sebelum revisi ini dan belum mencerminkan perubahan peran terbaru.

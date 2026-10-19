@@ -73,7 +73,7 @@ Disarankan aktifkan branch protection/ruleset `main`, wajibkan check `validate` 
 
 ## Rollback
 
-Jika versi baru bermasalah, gunakan deployment sebelumnya di Vercel, lalu buat commit perbaikan/revert agar source sinkron. Jangan reset paksa history. Repository sudah memiliki migrasi Supabase additive sampai 0013: rollback aplikasi tidak membatalkan schema/data. Pertahankan kompatibilitas deployment lama dan gunakan migrasi perbaikan baru, bukan mengedit migration yang telah diterapkan atau reset database produksi. Jalankan dry-run dan regresi rollback-only sebelum db:apply eksplisit; CI memakai PostgreSQL disposable. Deployment aplikasi saat ini tidak otomatis menerapkan migrasi remote.
+Jika versi baru bermasalah, gunakan deployment yang sesuai dengan versi database lalu buat commit perbaikan/revert agar source sinkron. Jangan reset paksa history. Migrasi additive 0014 mengganti kewenangan Manager/HR: rollback aplikasi lama saja dapat membuat alur penilaian gagal karena Manager tidak lagi boleh menerbitkan nilai. Gunakan migrasi perbaikan baru bila perlu memulihkan alur, bukan mengedit migrasi terapan atau reset database. Jalankan dry-run dan regresi rollback-only sebelum db:apply eksplisit; CI memakai PostgreSQL disposable. Deployment aplikasi tidak otomatis menerapkan migrasi remote. Sebelum mempublikasikan revisi ini, terapkan 0014 setelah tes lalu deploy SHA yang lolos CI.
 
 ## Referensi
 

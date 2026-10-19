@@ -1,5 +1,7 @@
 # Handoff backend PeopleSpace HRIS
 
+**Revisi dosen 19 Oktober 2026:** tetap Supabase. Kontrak historis di bawah digantikan oleh [revisi terbaru](../REVISI_DOSEN_2026-10-19.md) dan [panduan demo](../DEMO_CAPSTONE.md): Manager menetapkan target, HR menangani operasional/penilaian, ditambah rekap bulanan dan tes pelamar fiktif. Jangan mengembalikan otorisasi Manager sebagai penilai/pemutus cuti dari spesifikasi lama.
+
 Versi usulan: **1.0 — 4 Oktober 2026**. Untuk Kelompok Capstone Project HRIS, kelas 4E.
 
 **Pembaruan 11 Oktober 2026:** status/kontrak v1 di bawah adalah rancangan historis. Aplikasi live di Vercel/Supabase, migrasi sampai 0013 diterapkan. KPI mendukung target dibagikan secara aman, draf evaluasi privat, bukti realisasi, final berbobot dan HR menilai Manager. Gunakan [panduan demo](../DEMO_CAPSTONE.md), [PRD FR46–FR56](../Perencanaan_HRIS_Final_v2.md), [UML revisi](../UML/README.md) dan route/RPC aktif; jangan reset/seed ulang dari instruksi historis.

@@ -59,7 +59,8 @@ export function KpiWorkflows({
     previousScore: number | null;
   } | null>(null);
   const manager = role === "Manager";
-  const evaluator = manager || role === "Admin HR";
+  const evaluator = role === "Admin HR";
+  const editor = manager || evaluator;
   const [goals, setGoals] = useState<KpiGoalDto[]>([]);
   const [targets, setTargets] = useState<{ id: string; name: string }[]>([]);
   const [share, setShare] = useState<KpiDto | null>(null);
@@ -75,7 +76,7 @@ export function KpiWorkflows({
       const [data, plans, allowed] = await Promise.all([
         hrApi.kpis(period),
         hrApi.kpiGoals(period),
-        evaluator ? hrApi.kpiTargets() : Promise.resolve([]),
+        editor ? hrApi.kpiTargets() : Promise.resolve([]),
       ]);
       if (sequence === requestSequence.current) {
         setRows(data);
@@ -87,7 +88,7 @@ export function KpiWorkflows({
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [period, evaluator, ownId]);
+  }, [period, editor, ownId]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize with external period-scoped API data.
     void load();
@@ -101,8 +102,12 @@ export function KpiWorkflows({
     if (row?.status === "PUBLISHED") return;
     setForm({
       employeeId,
-      indicators: row ? structuredClone(row.indicators) : kpiTemplate(),
-      notes: row?.notes ?? "",
+      indicators: row
+        ? structuredClone(row.indicators).map((item) =>
+            manager ? { ...item, actual: null, evidence: "" } : item,
+          )
+        : kpiTemplate(),
+      notes: manager ? "" : (row?.notes ?? ""),
       version: row?.version ?? null,
     });
   };
@@ -128,7 +133,11 @@ export function KpiWorkflows({
         expectedVersion: form.version,
       });
       setForm(null);
-      toast.success("Draf KPI tersimpan. Karyawan belum melihat nilai ini.");
+      toast.success(
+        manager
+          ? "Draf target tersimpan. Bagikan agar dapat dinilai Admin HR."
+          : "Draf penilaian tersimpan. Nilai belum final.",
+      );
       await load();
     } catch (e) {
       toast.error(errorMessage(e));
@@ -197,6 +206,18 @@ export function KpiWorkflows({
     }
   };
   const published = rows.filter((r) => r.status === "PUBLISHED");
+  const targetLocked =
+    !manager ||
+    !!rows.find((r) => r.employeeId === form?.employeeId)?.goalsSharedAt;
+  const availableTargets = targets.filter(
+    (e) =>
+      !goals.some((g) => g.employeeId === e.id) &&
+      !rows.some(
+        (r) =>
+          r.employeeId === e.id &&
+          (r.status === "PUBLISHED" || !!r.goalsSharedAt),
+      ),
+  );
   const average = published.length
     ? Math.round(
         published.reduce((sum, r) => sum + r.score!, 0) / published.length,
@@ -246,40 +267,20 @@ export function KpiWorkflows({
           >
             Muat ulang KPI
           </Button>
-          {evaluator && (
+          {manager && (
             <Button
-              disabled={
-                busy ||
-                loading ||
-                !!error ||
-                !targets.some(
-                  (e) =>
-                    !rows.some(
-                      (r) => r.employeeId === e.id && r.status === "PUBLISHED",
-                    ),
-                )
-              }
-              onClick={() =>
-                edit(
-                  targets.find(
-                    (e) =>
-                      !rows.some(
-                        (r) =>
-                          r.employeeId === e.id && r.status === "PUBLISHED",
-                      ),
-                  )!.id,
-                )
-              }
+              disabled={busy || loading || !!error || !availableTargets.length}
+              onClick={() => edit(availableTargets[0].id)}
             >
-              <Plus size={16} /> Susun KPI
+              <Plus size={16} /> Susun target bulanan
             </Button>
           )}
         </div>
         <p className="kpi-help">
           {manager
-            ? "Susun dan bagikan target kepada tim, kemudian isi realisasi beserta bukti, lalu terbitkan hasil final. Tidak bisa menilai diri sendiri atau Manager lain."
+            ? "Tetapkan dan bagikan target bulanan tim. Setelah dibagikan, target terkunci. Admin HR mengisi realisasi dan menerbitkan nilai; Anda memantau hasilnya."
             : role === "Admin HR"
-              ? "HR memantau seluruh KPI dan menilai Manager. Karyawan dinilai Manager departemennya. Tidak bisa menilai diri sendiri."
+              ? "Kelola penilaian berdasarkan target yang dibagikan Manager. Isi realisasi dan bukti, lalu terbitkan nilai final. Target tidak dapat diubah dan Anda tidak bisa menilai diri sendiri."
               : "Lihat target yang telah dibagikan dan hasil final milik sendiri. Nilai draf tetap privat."}
         </p>
       </div>
@@ -311,7 +312,7 @@ export function KpiWorkflows({
         </div>
       ) : (
         <>
-          {form && evaluator && (
+          {form && editor && (
             <form
               className="panel kpi-editor"
               onSubmit={(e) => {
@@ -320,7 +321,9 @@ export function KpiWorkflows({
               }}
             >
               <div className="workflow-row">
-                <h2>Susun draf KPI</h2>
+                <h2>
+                  {manager ? "Susun target bulanan" : "Isi realisasi KPI"}
+                </h2>
                 <Button
                   type="button"
                   variant="ghost"
@@ -335,10 +338,10 @@ export function KpiWorkflows({
                 <select
                   aria-label="Karyawan KPI"
                   value={form.employeeId}
-                  disabled={busy}
+                  disabled={busy || evaluator}
                   onChange={(e) => edit(e.target.value)}
                 >
-                  {targets
+                  {(manager ? availableTargets : targets)
                     .filter(
                       (e) =>
                         !rows.some(
@@ -357,9 +360,9 @@ export function KpiWorkflows({
                 {rows.find((r) => r.employeeId === form.employeeId)
                   ?.goalsSharedAt &&
                   "Target sudah dibagikan dan terkunci. Lengkapi realisasi serta sumber bukti. "}
-                Template awal dapat diubah. Realisasi kosong berarti belum
-                dinilai, bukan nol. Pilih “Lebih rendah lebih baik” untuk jumlah
-                kesalahan atau durasi.
+                {manager
+                  ? "Sesuaikan indikator, target, bobot, dan cara mengukur. Penilaian dilakukan Admin HR setelah target dibagikan."
+                  : "Realisasi kosong berarti belum dinilai, bukan nol. Lengkapi bukti sebelum menerbitkan hasil."}
               </p>
               {form.indicators.map((item, i) => (
                 <fieldset key={i} className="kpi-indicator">
@@ -372,11 +375,7 @@ export function KpiWorkflows({
                         required
                         maxLength={120}
                         value={item.name}
-                        disabled={
-                          busy ||
-                          !!rows.find((r) => r.employeeId === form.employeeId)
-                            ?.goalsSharedAt
-                        }
+                        disabled={busy || targetLocked}
                         onChange={(e) => patch(i, { name: e.target.value })}
                       />
                     </label>
@@ -387,11 +386,7 @@ export function KpiWorkflows({
                         required
                         maxLength={30}
                         value={item.unit}
-                        disabled={
-                          busy ||
-                          !!rows.find((r) => r.employeeId === form.employeeId)
-                            ?.goalsSharedAt
-                        }
+                        disabled={busy || targetLocked}
                         onChange={(e) => patch(i, { unit: e.target.value })}
                       />
                     </label>
@@ -400,11 +395,7 @@ export function KpiWorkflows({
                       <select
                         aria-label={`Arah target ${i + 1}`}
                         value={item.direction}
-                        disabled={
-                          busy ||
-                          !!rows.find((r) => r.employeeId === form.employeeId)
-                            ?.goalsSharedAt
-                        }
+                        disabled={busy || targetLocked}
                         onChange={(e) =>
                           patch(i, {
                             direction: e.target
@@ -426,11 +417,7 @@ export function KpiWorkflows({
                         max="1000000000"
                         step="any"
                         value={item.target || ""}
-                        disabled={
-                          busy ||
-                          !!rows.find((r) => r.employeeId === form.employeeId)
-                            ?.goalsSharedAt
-                        }
+                        disabled={busy || targetLocked}
                         onChange={(e) =>
                           patch(i, { target: Number(e.target.value) })
                         }
@@ -446,37 +433,35 @@ export function KpiWorkflows({
                         max="100"
                         step="1"
                         value={item.weight || ""}
-                        disabled={
-                          busy ||
-                          !!rows.find((r) => r.employeeId === form.employeeId)
-                            ?.goalsSharedAt
-                        }
+                        disabled={busy || targetLocked}
                         onChange={(e) =>
                           patch(i, { weight: Number(e.target.value) })
                         }
                       />
                     </label>
-                    <label>
-                      Realisasi
-                      <Input
-                        aria-label={`Realisasi ${i + 1}`}
-                        type="number"
-                        min="0"
-                        max="1000000000"
-                        step="any"
-                        placeholder="Belum dinilai"
-                        value={item.actual ?? ""}
-                        disabled={busy}
-                        onChange={(e) =>
-                          patch(i, {
-                            actual:
-                              e.target.value === ""
-                                ? null
-                                : Number(e.target.value),
-                          })
-                        }
-                      />
-                    </label>
+                    {evaluator && (
+                      <label>
+                        Realisasi
+                        <Input
+                          aria-label={`Realisasi ${i + 1}`}
+                          type="number"
+                          min="0"
+                          max="1000000000"
+                          step="any"
+                          placeholder="Belum dinilai"
+                          value={item.actual ?? ""}
+                          disabled={busy}
+                          onChange={(e) =>
+                            patch(i, {
+                              actual:
+                                e.target.value === ""
+                                  ? null
+                                  : Number(e.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                    )}
                   </div>
                   <label>
                     Cara mengukur / sumber data
@@ -484,35 +469,30 @@ export function KpiWorkflows({
                       aria-label={`Cara mengukur ${i + 1}`}
                       maxLength={1000}
                       value={item.measurement ?? ""}
-                      disabled={
-                        busy ||
-                        !!rows.find((r) => r.employeeId === form.employeeId)
-                          ?.goalsSharedAt
-                      }
+                      disabled={busy || targetLocked}
                       onChange={(e) =>
                         patch(i, { measurement: e.target.value })
                       }
                     />
                   </label>
-                  <label>
-                    Bukti realisasi (jumlah, periode, atau referensi dokumen)
-                    <textarea
-                      aria-label={`Bukti realisasi ${i + 1}`}
-                      maxLength={1000}
-                      value={item.evidence ?? ""}
-                      disabled={busy}
-                      placeholder="Contoh: 8 dari 10 tugas selesai, daftar tugas Oktober. Jangan masukkan data sensitif."
-                      onChange={(e) => patch(i, { evidence: e.target.value })}
-                    />
-                  </label>
+                  {evaluator && (
+                    <label>
+                      Bukti realisasi (jumlah, periode, atau referensi dokumen)
+                      <textarea
+                        aria-label={`Bukti realisasi ${i + 1}`}
+                        maxLength={1000}
+                        value={item.evidence ?? ""}
+                        disabled={busy}
+                        placeholder="Contoh: 8 dari 10 tugas selesai, daftar tugas Oktober. Jangan masukkan data sensitif."
+                        onChange={(e) => patch(i, { evidence: e.target.value })}
+                      />
+                    </label>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
                     disabled={
-                      busy ||
-                      form.indicators.length === 1 ||
-                      !!rows.find((r) => r.employeeId === form.employeeId)
-                        ?.goalsSharedAt
+                      busy || form.indicators.length === 1 || targetLocked
                     }
                     onClick={() =>
                       setForm({
@@ -528,12 +508,7 @@ export function KpiWorkflows({
               <Button
                 type="button"
                 variant="outline"
-                disabled={
-                  busy ||
-                  form.indicators.length >= 10 ||
-                  !!rows.find((r) => r.employeeId === form.employeeId)
-                    ?.goalsSharedAt
-                }
+                disabled={busy || form.indicators.length >= 10 || targetLocked}
                 onClick={() =>
                   setForm({
                     ...form,
@@ -553,26 +528,32 @@ export function KpiWorkflows({
               >
                 Tambah indikator
               </Button>
-              <label>
-                Catatan KPI
-                <textarea
-                  aria-label="Catatan KPI"
-                  maxLength={2000}
-                  value={form.notes}
-                  disabled={busy}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                />
-              </label>
+              {evaluator && (
+                <label>
+                  Catatan KPI
+                  <textarea
+                    aria-label="Catatan KPI"
+                    maxLength={2000}
+                    value={form.notes}
+                    disabled={busy}
+                    onChange={(e) =>
+                      setForm({ ...form, notes: e.target.value })
+                    }
+                  />
+                </label>
+              )}
               <div className="workflow-row">
                 <strong>
                   Total bobot:{" "}
                   {form.indicators.reduce((sum, i) => sum + i.weight, 0)}% /
                   100%
                 </strong>
-                <span>
-                  Pratinjau nilai:{" "}
-                  {kpiScore(form.indicators) ?? "Belum lengkap"}
-                </span>
+                {evaluator && (
+                  <span>
+                    Pratinjau nilai:{" "}
+                    {kpiScore(form.indicators) ?? "Belum lengkap"}
+                  </span>
+                )}
               </div>
               {!validateIndicators(form.indicators) && (
                 <p role="alert">
@@ -583,10 +564,12 @@ export function KpiWorkflows({
                 type="submit"
                 disabled={busy || !validateIndicators(form.indicators)}
               >
-                Simpan draf KPI
+                {manager ? "Simpan draf target" : "Simpan draf KPI"}
               </Button>
               <small>
-                Terbitkan melalui kartu draf setelah semua perubahan disimpan.
+                {manager
+                  ? "Bagikan target melalui kartu draf setelah disimpan."
+                  : "Terbitkan melalui kartu draf setelah semua perubahan disimpan."}
               </small>
             </form>
           )}
@@ -600,8 +583,8 @@ export function KpiWorkflows({
               <p>
                 Nilai tidak dibuat otomatis.{" "}
                 {manager
-                  ? "Mulai dari Susun KPI untuk menentukan target tim."
-                  : "Hasil akan muncul setelah Manager menyelesaikan penilaian."}
+                  ? "Mulai dari Susun target bulanan untuk menentukan target tim."
+                  : "Hasil akan muncul setelah Admin HR menerbitkan penilaian. Target ditentukan Manager."}
               </p>
             </div>
           )}
@@ -683,11 +666,12 @@ export function KpiWorkflows({
                     WIB · Terkunci
                   </small>
                 )}
-                {evaluator &&
+                {editor &&
                   targets.some((e) => e.id === row.employeeId) &&
-                  row.status === "DRAFT" && (
+                  row.status === "DRAFT" &&
+                  (manager ? !row.goalsSharedAt : !!row.goalsSharedAt) && (
                     <div className="workflow-row">
-                      {!row.goalsSharedAt && (
+                      {manager && !row.goalsSharedAt && (
                         <Button
                           variant="outline"
                           disabled={
@@ -708,20 +692,22 @@ export function KpiWorkflows({
                         disabled={busy}
                         onClick={() => edit(row.employeeId)}
                       >
-                        Edit draf KPI
+                        {manager ? "Edit target bulanan" : "Isi realisasi KPI"}
                       </Button>
-                      <Button
-                        disabled={
-                          busy ||
-                          !row.goalsSharedAt ||
-                          row.indicators.some((i) => !i.evidence?.trim()) ||
-                          kpiScore(row.indicators) === null ||
-                          form?.employeeId === row.employeeId
-                        }
-                        onClick={() => void preparePublish(row)}
-                      >
-                        <CheckCircle2 size={16} /> Terbitkan KPI
-                      </Button>
+                      {evaluator && (
+                        <Button
+                          disabled={
+                            busy ||
+                            !row.goalsSharedAt ||
+                            row.indicators.some((i) => !i.evidence?.trim()) ||
+                            kpiScore(row.indicators) === null ||
+                            form?.employeeId === row.employeeId
+                          }
+                          onClick={() => void preparePublish(row)}
+                        >
+                          <CheckCircle2 size={16} /> Terbitkan KPI
+                        </Button>
+                      )}
                     </div>
                   )}
               </article>

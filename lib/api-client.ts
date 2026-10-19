@@ -10,6 +10,7 @@ import type {
   PayrollReadinessDto,
   ReviewDto,
 } from "./api-adapters";
+import type { Applicant, MonthlyReportRow } from "./lecturer-revision";
 
 /**
  * Klien API browser untuk `/api/v1`. Semua request same-origin + cookie session.
@@ -194,6 +195,23 @@ export type AuditDto = {
 };
 
 export const hrApi = {
+  monthlyPerformance: (period: string) =>
+    list<MonthlyReportRow>("/monthly-performance", { period }),
+  applicants: () => list<Applicant>("/applicants"),
+  updateApplicant: (
+    id: string,
+    body: {
+      aptitudeScore: number;
+      technicalScore: number;
+      interviewScore: number;
+      notes: string;
+      expectedVersion: number;
+    },
+  ) =>
+    request<Applicant>(`/applicants/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   policy: () => request<HrPolicy>("/hr-policy"),
   updatePolicy: (
     body: Omit<HrPolicy, "version"> & { expectedVersion: number },
