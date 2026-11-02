@@ -99,6 +99,16 @@ export function csvCell(value: unknown) {
   if (/^[\s]*[=+\-@]/.test(text)) text = "'" + text;
   return '"' + text.replaceAll('"', '""') + '"';
 }
+/**
+ * Serialize rows (header first) into a spreadsheet-friendly CSV document.
+ * Prepends a UTF-8 BOM and the Excel `sep=,` hint so the file opens as a tidy,
+ * column-separated table even in locales (e.g. Indonesian) where Excel defaults
+ * the list separator to `;` and would otherwise dump every row into one column.
+ */
+export function csvDocument(rows: unknown[][]) {
+  const body = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return "\uFEFF" + "sep=,\r\n" + body;
+}
 export function payrollError(
   salary: number,
   allowance: number,

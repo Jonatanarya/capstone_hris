@@ -80,7 +80,7 @@ import {
   workingDays,
   availableLeave,
   leaveError,
-  csvCell,
+  csvDocument,
   payrollError,
 } from "@/lib/hris";
 import { isLiveMode } from "@/lib/api-mode";
@@ -1547,9 +1547,8 @@ export default function HrisApp({ today }: { today: string }) {
           p.status,
         ]),
       ];
-    const csv = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
     const u = URL.createObjectURL(
-      new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }),
+      new Blob([csvDocument(rows)], { type: "text/csv;charset=utf-8" }),
     );
     const a = document.createElement("a");
     a.href = u;
