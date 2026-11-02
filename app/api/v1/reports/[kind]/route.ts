@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { api, handle } from "@/lib/api/http";
 import { assertActive, getActor } from "@/lib/api/actor";
-import { csvCell, jakartaDate } from "@/lib/hris";
+import { csvDocument, jakartaDate } from "@/lib/hris";
 import { exportRows } from "@/lib/api/export";
 import { isUuid } from "@/lib/api/dto";
 import { requireEnum } from "@/lib/api/query";
@@ -16,9 +16,7 @@ const KINDS = [
 type Kind = (typeof KINDS)[number];
 
 function toCsv(header: string[], rows: unknown[][]) {
-  return [header, ...rows]
-    .map((row) => row.map((v) => csvCell(v)).join(","))
-    .join("\r\n");
+  return csvDocument([header, ...rows]);
 }
 
 function csvResponse(filename: string, body: string) {
